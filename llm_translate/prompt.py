@@ -64,6 +64,17 @@ class PromptBuilder:
                 "- Keep placeholders unchanged; HTML tags, attributes, links, images, and styles are handled outside the model.\n"
             )
             return_type = "plain translated text"
+        elif document_format == "plain_text":
+            system = (
+                "You are a plain text translation engine. Translate natural-language text, "
+                "preserve paragraph breaks, and never rewrite placeholders."
+            )
+            extra_rules = (
+                "- This input is plain text without document formatting.\n"
+                "- Preserve paragraph boundaries and line breaks when they carry meaning.\n"
+                "- Do not add Markdown, HTML, explanations, titles, or wrappers.\n"
+            )
+            return_type = "plain translated text"
         else:
             system = (
                 "You are a structured long-document translation engine. Translate "

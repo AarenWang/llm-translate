@@ -8,6 +8,7 @@ from .epub import EpubFormatAdapter
 from .html import HTMLFormatAdapter
 from .ipynb import IpynbFormatAdapter
 from .markdown import MarkdownFormatAdapter
+from .plain_text import PlainTextFormatAdapter
 
 
 class FormatRegistry:
@@ -34,6 +35,7 @@ def default_format_registry(
     return FormatRegistry(
         [
             MarkdownFormatAdapter(soft_input_tokens, max_input_tokens),
+            PlainTextFormatAdapter(soft_input_tokens, max_input_tokens),
             HTMLFormatAdapter(soft_input_tokens, max_input_tokens),
             IpynbFormatAdapter(soft_input_tokens, max_input_tokens),
             EpubFormatAdapter(soft_input_tokens, max_input_tokens),
