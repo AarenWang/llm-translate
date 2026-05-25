@@ -11,14 +11,16 @@ from .chunking import ChunkingEngine
 from .config import DEFAULT_STYLE_GUIDE, Settings
 from .domain import (
     ChunkStatus,
+    DocumentBlock,
     GlossaryTerm,
     ProjectStatus,
     TranslationChunk,
     TranslationProject,
+    ValidationReport,
 )
-from .exporter import MarkdownExporter
+from .exporter import IpynbExporter, MarkdownExporter
 from .llm import LLMProvider
-from .parser import MarkdownParser
+from .parser import IpynbParser, MarkdownParser
 from .prompt import PromptBuilder
 from .protection import ProtectionEngine
 from .storage import SQLiteStore
@@ -29,12 +31,14 @@ class TranslationService:
     def __init__(self, settings: Settings):
         self.settings = settings
         self.store = SQLiteStore(settings.database_path)
-        self.parser = MarkdownParser()
+        self.markdown_parser = MarkdownParser()
+        self.ipynb_parser = IpynbParser()
         self.chunker = ChunkingEngine(settings.soft_input_tokens, settings.max_input_tokens)
         self.protection = ProtectionEngine()
         self.prompt_builder = PromptBuilder()
         self.validator = ValidationEngine()
         self.exporter = MarkdownExporter()
+        self.ipynb_exporter = IpynbExporter()
 
     def init_db(self) -> None:
         self.store.init_db()
@@ -69,13 +73,27 @@ class TranslationService:
 
     def parse_project(self, project_id: str) -> None:
         project = self.store.get_project(project_id)
-        if project.input_format != "markdown":
-            raise ValueError("V1.0 MVP currently supports Markdown input only")
         source = self.source_path(project)
-        blocks = self.parser.parse(project.id, source.read_text(encoding="utf-8"))
-        self.store.replace_blocks(project.id, blocks)
         snapshot_dir = self.project_dir(project.id) / "snapshots"
         snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        if project.input_format == "markdown":
+            blocks = self.markdown_parser.parse(project.id, source.read_text(encoding="utf-8"))
+        elif project.input_format == "ipynb":
+            notebook = json.loads(source.read_text(encoding="utf-8"))
+            blocks = self.ipynb_parser.parse(project.id, notebook)
+            (snapshot_dir / "notebook.original.json").write_text(
+                json.dumps(notebook, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+            (snapshot_dir / "notebook.cells.json").write_text(
+                json.dumps([block.metadata for block in blocks], ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        else:
+            raise ValueError(f"unsupported parse format: {project.input_format}")
+
+        self.store.replace_blocks(project.id, blocks)
         (snapshot_dir / "ast.json").write_text(
             json.dumps([asdict(block) for block in blocks], ensure_ascii=False, indent=2),
             encoding="utf-8",
@@ -147,10 +165,48 @@ class TranslationService:
             self.store.update_project_status(project_id, ProjectStatus.COMPLETED)
 
     def export_project(self, project_id: str) -> dict[str, Path]:
+        project = self.store.get_project(project_id)
         chunks = self.store.list_chunks(project_id)
         reports = self.store.list_validation_reports(project_id)
         draft = any(chunk.status != ChunkStatus.DONE for chunk in chunks)
-        paths = self.exporter.export(self.artifact_dir(project_id), chunks, reports, draft=draft)
+
+        if project.input_format == "ipynb":
+            blocks = self.store.list_blocks(project_id)
+            original_notebook = self._load_original_notebook(project_id)
+            pre_export_report = self._validate_notebook_blocks(project_id, original_notebook, blocks)
+            self.store.add_validation_report(pre_export_report)
+            reports = self.store.list_validation_reports(project_id)
+            if pre_export_report.status == "FAIL":
+                draft = True
+            paths = self.ipynb_exporter.export(
+                self.artifact_dir(project_id),
+                original_notebook,
+                blocks,
+                chunks,
+                reports,
+                draft=draft,
+            )
+            exported_notebook = json.loads(paths["ipynb"].read_text(encoding="utf-8"))
+            artifact_report = self._validate_notebook_artifact(
+                project_id,
+                original_notebook,
+                exported_notebook,
+            )
+            self.store.add_validation_report(artifact_report)
+            reports = self.store.list_validation_reports(project_id)
+            if artifact_report.status == "FAIL":
+                draft = True
+            paths = self.ipynb_exporter.export(
+                self.artifact_dir(project_id),
+                original_notebook,
+                blocks,
+                chunks,
+                reports,
+                draft=draft,
+            )
+        else:
+            paths = self.exporter.export(self.artifact_dir(project_id), chunks, reports, draft=draft)
+
         self.store.update_project_status(
             project_id,
             ProjectStatus.EXPORTED if not draft else self.store.get_project(project_id).status,
@@ -195,7 +251,8 @@ class TranslationService:
                     target_language=project.target_language,
                     glossary_terms=terms,
                     style_guide=DEFAULT_STYLE_GUIDE,
-                    chapter_path=chunk.chapter_id,
+                    chapter_path=self._chapter_path(project, chunk),
+                    document_format=project.input_format,
                 )
                 chunk.status = ChunkStatus.TRANSLATING
                 self.store.upsert_chunk(chunk)
@@ -261,4 +318,117 @@ class TranslationService:
             return "txt"
         if suffix == ".docx":
             return "docx"
+        if suffix == ".ipynb":
+            return "ipynb"
         raise ValueError(f"unsupported input format: {suffix}")
+
+    def _chapter_path(self, project: TranslationProject, chunk: TranslationChunk) -> str | None:
+        if project.input_format == "ipynb":
+            return f"Jupyter Notebook markdown cell / {chunk.chapter_id or chunk.id}"
+        return chunk.chapter_id
+
+    def _load_original_notebook(self, project_id: str) -> dict:
+        snapshot = self.project_dir(project_id) / "snapshots" / "notebook.original.json"
+        return json.loads(snapshot.read_text(encoding="utf-8"))
+
+    def _validate_notebook_blocks(
+        self,
+        project_id: str,
+        original_notebook: dict,
+        blocks: list[DocumentBlock],
+    ) -> ValidationReport | None:
+        issues: list[dict] = []
+        cells = original_notebook.get("cells")
+        if not isinstance(cells, list):
+            issues.append({"type": "NOTEBOOK_CELLS_NOT_LIST"})
+        elif len(cells) != len(blocks):
+            issues.append(
+                {
+                    "type": "NOTEBOOK_CELL_COUNT_CHANGED",
+                    "expected": len(cells),
+                    "actual": len(blocks),
+                }
+            )
+        else:
+            for block in blocks:
+                cell_index = block.metadata.get("cell_index")
+                if not isinstance(cell_index, int) or cell_index >= len(cells):
+                    issues.append({"type": "INVALID_CELL_INDEX", "block_id": block.id})
+                    continue
+                expected_type = cells[cell_index].get("cell_type", "raw")
+                if block.metadata.get("cell_type") != expected_type:
+                    issues.append(
+                        {
+                            "type": "NOTEBOOK_CELL_TYPE_CHANGED",
+                            "cell_index": cell_index,
+                            "expected": expected_type,
+                            "actual": block.metadata.get("cell_type"),
+                        }
+                    )
+
+        return ValidationReport(
+            id=f"vr_{uuid4().hex}",
+            project_id=project_id,
+            chunk_id=None,
+            check_type="NOTEBOOK_STRUCTURE",
+            status="PASS" if not issues else "FAIL",
+            issues=issues,
+        )
+
+    def _validate_notebook_artifact(
+        self,
+        project_id: str,
+        original_notebook: dict,
+        exported_notebook: dict,
+    ) -> ValidationReport:
+        issues: list[dict] = []
+        original_cells = original_notebook.get("cells")
+        exported_cells = exported_notebook.get("cells")
+
+        for key in ("nbformat", "nbformat_minor", "metadata"):
+            if exported_notebook.get(key) != original_notebook.get(key):
+                issues.append({"type": "NOTEBOOK_TOP_LEVEL_CHANGED", "field": key})
+
+        if not isinstance(original_cells, list) or not isinstance(exported_cells, list):
+            issues.append({"type": "NOTEBOOK_CELLS_NOT_LIST"})
+        elif len(original_cells) != len(exported_cells):
+            issues.append(
+                {
+                    "type": "NOTEBOOK_CELL_COUNT_CHANGED",
+                    "expected": len(original_cells),
+                    "actual": len(exported_cells),
+                }
+            )
+        else:
+            for index, (original_cell, exported_cell) in enumerate(zip(original_cells, exported_cells)):
+                if exported_cell.get("cell_type") != original_cell.get("cell_type"):
+                    issues.append({"type": "NOTEBOOK_CELL_TYPE_CHANGED", "cell_index": index})
+                    continue
+                for field in ("id", "metadata", "attachments"):
+                    if exported_cell.get(field) != original_cell.get(field):
+                        issues.append(
+                            {
+                                "type": "NOTEBOOK_CELL_FIELD_CHANGED",
+                                "cell_index": index,
+                                "field": field,
+                            }
+                        )
+                if original_cell.get("cell_type") != "markdown":
+                    for field in ("source", "outputs", "execution_count"):
+                        if exported_cell.get(field) != original_cell.get(field):
+                            issues.append(
+                                {
+                                    "type": "NOTEBOOK_NON_MARKDOWN_CELL_CHANGED",
+                                    "cell_index": index,
+                                    "field": field,
+                                }
+                            )
+
+        return ValidationReport(
+            id=f"vr_{uuid4().hex}",
+            project_id=project_id,
+            chunk_id=None,
+            check_type="NOTEBOOK_ARTIFACT",
+            status="PASS" if not issues else "FAIL",
+            issues=issues,
+        )

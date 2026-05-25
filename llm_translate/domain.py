@@ -78,6 +78,7 @@ class TranslationChunk:
     glossary_version: str = "glossary-v1"
     style_guide_version: str = "style-v1"
     protection_policy_version: str = "protection-v1"
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass

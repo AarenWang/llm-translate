@@ -85,6 +85,7 @@ class TranslationChunkRow(Base):
     glossary_version = Column(String, nullable=False)
     style_guide_version = Column(String, nullable=False)
     protection_policy_version = Column(String, nullable=False)
+    metadata_json = Column("metadata", Text, nullable=False, default="{}")
     created_at = Column(String, server_default=func.current_timestamp(), nullable=False)
     updated_at = Column(String, server_default=func.current_timestamp(), nullable=False)
 
@@ -161,6 +162,13 @@ class SQLiteStore:
 
     def init_db(self) -> None:
         Base.metadata.create_all(self.engine)
+        self._ensure_schema()
+
+    def _ensure_schema(self) -> None:
+        with self.engine.begin() as conn:
+            columns = {row[1] for row in conn.exec_driver_sql("PRAGMA table_info(translation_chunk)")}
+            if "metadata" not in columns:
+                conn.exec_driver_sql("ALTER TABLE translation_chunk ADD COLUMN metadata TEXT NOT NULL DEFAULT '{}'")
 
     def create_project(self, project: TranslationProject) -> None:
         with Session(self.engine) as session:
@@ -272,6 +280,7 @@ class SQLiteStore:
                 row.glossary_version = chunk.glossary_version
                 row.style_guide_version = chunk.style_guide_version
                 row.protection_policy_version = chunk.protection_policy_version
+                row.metadata_json = dumps(chunk.metadata)
                 row.updated_at = _current_timestamp_sqlite(session)
             session.commit()
 
@@ -454,6 +463,7 @@ def chunk_to_row(chunk: TranslationChunk) -> TranslationChunkRow:
         glossary_version=chunk.glossary_version,
         style_guide_version=chunk.style_guide_version,
         protection_policy_version=chunk.protection_policy_version,
+        metadata_json=dumps(chunk.metadata),
     )
 
 
@@ -476,6 +486,7 @@ def chunk_from_row(row: TranslationChunkRow) -> TranslationChunk:
         glossary_version=row.glossary_version,
         style_guide_version=row.style_guide_version,
         protection_policy_version=row.protection_policy_version,
+        metadata=loads(row.metadata_json, {}),
     )
 
 

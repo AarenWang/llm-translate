@@ -3,7 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .domain import TranslationChunk, ValidationReport
+from .domain import DocumentBlock, TranslationChunk, ValidationReport
+from .parser.ipynb import source_from_text
 
 
 class MarkdownExporter:
@@ -82,3 +83,68 @@ class MarkdownExporter:
             issues = "; ".join(issue["type"] for issue in report.issues) or "-"
             rows.append(f"| {report.chunk_id or '-'} | {report.check_type} | {report.status} | {issues} |")
         return "\n".join(rows) + "\n"
+
+
+class IpynbExporter:
+    def __init__(self) -> None:
+        self.markdown_exporter = MarkdownExporter()
+
+    def export(
+        self,
+        artifact_dir: Path,
+        original_notebook: dict,
+        blocks: list[DocumentBlock],
+        chunks: list[TranslationChunk],
+        reports: list[ValidationReport],
+        draft: bool = False,
+    ) -> dict[str, Path]:
+        artifact_dir.mkdir(parents=True, exist_ok=True)
+        suffix = ".draft" if draft else ""
+        ipynb_path = artifact_dir / f"translated{suffix}.ipynb"
+        notebook = json.loads(json.dumps(original_notebook, ensure_ascii=False))
+
+        chunk_by_block_id = {
+            block_id: [chunk for chunk in chunks if block_id in chunk.block_ids]
+            for block_id in {block_id for chunk in chunks for block_id in chunk.block_ids}
+        }
+
+        for block_id, block_chunks in chunk_by_block_id.items():
+            block_chunks.sort(
+                key=lambda chunk: (
+                    int(chunk.metadata.get("chunk_part", 0)),
+                    chunk.chunk_order,
+                )
+            )
+
+        for block in blocks:
+            if block.block_type != "notebook_markdown_cell":
+                continue
+            cell_index = block.metadata["cell_index"]
+            source_kind = block.metadata.get("source_kind", "list")
+            block_chunks = chunk_by_block_id.get(block.id, [])
+            translated_parts = [chunk.restored_text for chunk in block_chunks if chunk.restored_text]
+            if translated_parts and len(translated_parts) == len(block_chunks):
+                text = "\n\n".join(part.rstrip("\n") for part in translated_parts)
+            elif draft:
+                statuses = ", ".join(f"{chunk.id}:{chunk.status.value}" for chunk in block_chunks) or "SKIPPED"
+                text = f"<!-- TRANSLATION_PENDING: {statuses} -->\n\n{block.source_text}"
+            else:
+                text = block.source_text
+            notebook["cells"][cell_index]["source"] = source_from_text(text, source_kind)
+
+        ipynb_path.write_text(
+            json.dumps(notebook, ensure_ascii=False, indent=1) + "\n",
+            encoding="utf-8",
+        )
+        paths = self.markdown_exporter.export(artifact_dir, chunks, reports, draft=draft)
+        paths["ipynb"] = ipynb_path
+        self._write_notebook_review_note(paths["translated"], ipynb_path)
+        return paths
+
+    def _write_notebook_review_note(self, translated_md_path: Path, ipynb_path: Path) -> None:
+        body = translated_md_path.read_text(encoding="utf-8")
+        note = (
+            "<!-- NOTE: This Markdown file contains translated notebook markdown cells only. "
+            f"The complete translated notebook is {ipynb_path.name}. -->\n\n"
+        )
+        translated_md_path.write_text(note + body, encoding="utf-8")

@@ -71,6 +71,8 @@ class ProtectionEngine:
     def _collect_matches(self, text: str) -> list[Match]:
         patterns: list[tuple[str, str]] = [
             ("CODE_BLOCK", r"```[\s\S]*?```|~~~[\s\S]*?~~~"),
+            ("HTML_BLOCK", r"<([A-Za-z][A-Za-z0-9:-]*)(?:\s[^>]*)?>[\s\S]*?</\1>"),
+            ("HTML_TAG", r"<[^>\n]+>"),
             ("INLINE_CODE", r"`[^`\n]+`"),
             ("IMAGE_PATH", r"!\[[^\]]*\]\(([^)\s]+)\)"),
             ("LINK_TARGET", r"(?<!!)\[[^\]]+\]\(([^)\s]+)\)"),

@@ -15,6 +15,9 @@ class ChunkingEngine:
         self.estimator = TokenEstimator()
 
     def build_chunks(self, project_id: str, blocks: list[DocumentBlock]) -> list[TranslationChunk]:
+        if blocks and blocks[0].metadata.get("format") == "ipynb":
+            return self._build_ipynb_chunks(project_id, blocks)
+
         chunks: list[TranslationChunk] = []
         pending: list[DocumentBlock] = []
         pending_tokens = 0
@@ -55,3 +58,83 @@ class ChunkingEngine:
 
         flush()
         return chunks
+
+    def _build_ipynb_chunks(self, project_id: str, blocks: list[DocumentBlock]) -> list[TranslationChunk]:
+        chunks: list[TranslationChunk] = []
+        current_chapter_id: str | None = None
+        for block in blocks:
+            if block.block_type == "notebook_markdown_cell" and block.level is not None:
+                current_chapter_id = block.id
+            if not block.metadata.get("translatable"):
+                continue
+            parts = self._split_ipynb_markdown_cell(block.source_text)
+            for part_index, part in enumerate(parts):
+                chunk_order = len(chunks)
+                chunks.append(
+                    TranslationChunk(
+                        id=f"{project_id}_c_{chunk_order + 1:06d}",
+                        project_id=project_id,
+                        chapter_id=current_chapter_id,
+                        chunk_order=chunk_order,
+                        block_ids=[block.id],
+                        source_text=part,
+                        metadata={
+                            "format": "ipynb",
+                            "cell_index": block.metadata.get("cell_index"),
+                            "cell_id": block.metadata.get("cell_id"),
+                            "block_id": block.id,
+                            "chunk_part": part_index,
+                            "part_count": len(parts),
+                        },
+                    )
+                )
+        return chunks
+
+    def _split_ipynb_markdown_cell(self, text: str) -> list[str]:
+        if self.estimator.estimate(text) <= self.max_input_tokens:
+            return [text]
+
+        units = text.split("\n\n")
+        parts: list[str] = []
+        pending: list[str] = []
+        pending_tokens = 0
+
+        def flush() -> None:
+            nonlocal pending, pending_tokens
+            if pending:
+                parts.append("\n\n".join(pending))
+                pending = []
+                pending_tokens = 0
+
+        for unit in units:
+            unit_tokens = self.estimator.estimate(unit)
+            if unit_tokens > self.max_input_tokens:
+                flush()
+                parts.extend(self._split_large_text_unit(unit))
+                continue
+            if pending and pending_tokens + unit_tokens > self.soft_input_tokens:
+                flush()
+            pending.append(unit)
+            pending_tokens += unit_tokens
+
+        flush()
+        return [part for part in parts if part.strip()] or [text]
+
+    def _split_large_text_unit(self, text: str) -> list[str]:
+        lines = text.splitlines(keepends=True)
+        parts: list[str] = []
+        pending: list[str] = []
+        pending_tokens = 0
+
+        for line in lines:
+            line_tokens = self.estimator.estimate(line)
+            if pending and pending_tokens + line_tokens > self.soft_input_tokens:
+                parts.append("".join(pending))
+                pending = []
+                pending_tokens = 0
+            pending.append(line)
+            pending_tokens += line_tokens
+
+        if pending:
+            parts.append("".join(pending))
+        return parts
