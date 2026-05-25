@@ -51,6 +51,20 @@ class ProtectionEngineTest(unittest.TestCase):
         restored = ProtectionEngine().restore(protected, result.spans)
         self.assertEqual(restored, SAMPLE)
 
+    def test_html_block_does_not_swallow_markdown_code_fence(self) -> None:
+        source = """Intro <memories>
+
+```python
+print("keep fenced")
+```
+
+</memories> outro
+"""
+        result = ProtectionEngine().protect("p1", "c1", source)
+        self.assertEqual(result.protected_text.count("```"), 0)
+        self.assertIn("__LT_CODE_BLOCK_", result.protected_text)
+        self.assertEqual(ProtectionEngine().restore(result.protected_text, result.spans), source)
+
 
 class PipelineTest(unittest.TestCase):
     def test_end_to_end_mock_pipeline_exports_artifacts(self) -> None:

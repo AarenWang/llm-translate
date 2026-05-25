@@ -84,6 +84,8 @@ class ProtectionEngine:
         matches: list[Match] = []
         for span_type, pattern in patterns:
             for match in re.finditer(pattern, text, flags=re.MULTILINE):
+                if span_type == "HTML_BLOCK" and "```" in match.group(0):
+                    continue
                 if span_type in {"IMAGE_PATH", "LINK_TARGET"} and match.lastindex:
                     matches.append(Match(match.start(1), match.end(1), span_type))
                 else:
