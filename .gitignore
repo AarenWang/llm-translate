@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+.llm_translate/
+.llm_translate*/
+.reltest/
+smoke_workspace/
+data/
+*.egg-info/
+.env

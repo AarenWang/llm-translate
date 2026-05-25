@@ -1,0 +1,3 @@
+source_term,target_term,case_sensitive,match_type,priority,note
+Agent,Intelligent Agent,true,exact,100,Test glossary term
+Tool Call,Tool Invocation,true,exact,100,Test glossary term
