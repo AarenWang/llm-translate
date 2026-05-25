@@ -497,6 +497,59 @@ tr.project-row.active {
   gap: 12px;
 }
 
+.compare-toolbar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.compare-summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  margin-bottom: 8px;
+}
+
+.compare-summary span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: #fafaf7;
+}
+
+.compare-wrap {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  overflow: auto;
+}
+
+.compare-table {
+  min-width: 760px;
+}
+
+.compare-table th:first-child,
+.compare-table td:first-child {
+  width: 48px;
+  text-align: right;
+}
+
+.compare-table td {
+  width: calc((100% - 48px) / 2);
+  vertical-align: top;
+}
+
+.compare-table tr.changed td {
+  background: rgba(32, 106, 93, 0.06);
+}
+
+.line-number {
+  color: var(--muted);
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+  font-size: 12px;
+}
+
 .text-box {
   border: 1px solid var(--line);
   border-radius: 8px;
@@ -575,4 +628,3 @@ pre {
     grid-template-columns: 1fr;
   }
 }
-

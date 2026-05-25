@@ -380,19 +380,90 @@ async function openChunk(chunkId) {
       ${kv("Blocks", fmtNumber((chunk.block_ids || []).length))}
     </div>
     ${chunk.error_message ? `<div class="error-banner">${escapeHtml(chunk.error_message)}</div>` : ""}
-    <div class="text-grid">
-      ${textBox("Source", chunk.source_text)}
-      ${textBox("Protected", chunk.protected_text)}
-      ${textBox("Target", chunk.target_text)}
-      ${textBox("Restored", chunk.restored_text)}
+    <div class="compare-toolbar">
+      <button class="tab-button active" data-chunk-view="compare">Compare</button>
+      <button class="tab-button" data-chunk-view="debug">Debug</button>
+    </div>
+    <div data-chunk-panel="compare">
+      ${renderComparePanel(chunk.source_text, chunk.restored_text || chunk.target_text)}
+    </div>
+    <div data-chunk-panel="debug" hidden>
+      <div class="text-grid">
+        ${textBox("Source", chunk.source_text)}
+        ${textBox("Protected", chunk.protected_text)}
+        ${textBox("Target", chunk.target_text)}
+        ${textBox("Restored", chunk.restored_text)}
+      </div>
     </div>
     ${detailSection("Validation", data.validation_reports.map(renderReport).join("") || `<div class="empty-state">No reports</div>`)}
     ${detailSection("Attempts", renderAttempts(data.attempts))}
     ${detailSection("Protected Spans", renderSpans(data.protected_spans))}
     ${detailSection("Blocks", renderBlocks(data.blocks))}
   `;
+  bindChunkViewTabs();
   els.drawer.classList.add("open");
   els.drawer.setAttribute("aria-hidden", "false");
+}
+
+function bindChunkViewTabs() {
+  document.querySelectorAll("[data-chunk-view]").forEach((button) => {
+    button.addEventListener("click", () => {
+      const view = button.dataset.chunkView;
+      document.querySelectorAll("[data-chunk-view]").forEach((item) => {
+        item.classList.toggle("active", item.dataset.chunkView === view);
+      });
+      document.querySelectorAll("[data-chunk-panel]").forEach((panel) => {
+        panel.hidden = panel.dataset.chunkPanel !== view;
+      });
+    });
+  });
+}
+
+function renderComparePanel(source, translated) {
+  const sourceLines = splitCompareLines(source);
+  const translatedLines = splitCompareLines(translated);
+  const maxLines = Math.max(sourceLines.length, translatedLines.length, 1);
+  const rows = [];
+  for (let index = 0; index < maxLines; index += 1) {
+    const left = sourceLines[index] ?? "";
+    const right = translatedLines[index] ?? "";
+    const changed = normalizeCompareLine(left) !== normalizeCompareLine(right);
+    rows.push(`
+      <tr class="${changed ? "changed" : ""}">
+        <td class="line-number">${index + 1}</td>
+        <td><pre>${escapeHtml(left)}</pre></td>
+        <td><pre>${escapeHtml(right)}</pre></td>
+      </tr>
+    `);
+  }
+  return `
+    <div class="compare-summary">
+      <span>${fmtNumber(sourceLines.join("\\n").length)} source chars</span>
+      <span>${fmtNumber(translatedLines.join("\\n").length)} translated chars</span>
+      <span>${fmtNumber(rows.filter((row) => row.includes('class="changed"')).length)} changed lines</span>
+    </div>
+    <div class="compare-wrap">
+      <table class="compare-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Source</th>
+            <th>Translation</th>
+          </tr>
+        </thead>
+        <tbody>${rows.join("")}</tbody>
+      </table>
+    </div>
+  `;
+}
+
+function splitCompareLines(text) {
+  if (!text) return [""];
+  return String(text).replaceAll("\r\n", "\n").replaceAll("\r", "\n").split("\n");
+}
+
+function normalizeCompareLine(text) {
+  return String(text || "").trim();
 }
 
 function textBox(title, text) {
@@ -481,4 +552,3 @@ document.addEventListener("keydown", (event) => {
 });
 
 loadWorkspaces();
-
