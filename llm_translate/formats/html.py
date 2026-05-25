@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 import json
 import re
+import shutil
 from uuid import uuid4
 from pathlib import Path
 from typing import Any
@@ -240,6 +241,7 @@ class HTMLFormatAdapter(FormatAdapter):
             self._build_modified_html(context.source_path, replacements),
             encoding="utf-8",
         )
+        self._copy_resource_dirs(context.source_path, context.artifact_dir)
         paths = self.exporter.export(
             context.artifact_dir,
             self._markdown_chunks(blocks, chunks),
@@ -453,3 +455,22 @@ class HTMLFormatAdapter(FormatAdapter):
                 )
             )
         return markdown_chunks
+
+    def _copy_resource_dirs(self, source_path: Path, artifact_dir: Path) -> None:
+        for resource_dir in self._resource_dir_candidates(source_path):
+            if not resource_dir.is_dir():
+                continue
+            target = artifact_dir / resource_dir.name
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(resource_dir, target)
+
+    def _resource_dir_candidates(self, source_path: Path) -> list[Path]:
+        parent = source_path.parent
+        stem = source_path.stem
+        return [
+            parent / f"{stem}_files",
+            parent / f"{stem}.files",
+            parent / f"{stem} 文件",
+            parent / f"{stem}_文件",
+        ]

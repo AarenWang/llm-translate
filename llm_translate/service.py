@@ -61,6 +61,7 @@ class TranslationService:
         destination = source_dir / source_path.name
         print(f"[CREATE_PROJECT] 复制源文件: {source_path.name}")
         shutil.copyfile(source_path, destination)
+        self._copy_html_resource_dirs(source_path, source_dir)
 
         # 检测文件格式
         input_format = self.formats.detect_name(source_path)
@@ -598,3 +599,25 @@ class TranslationService:
         for report in reports:
             if report.id not in existing_ids:
                 self.store.add_validation_report(report)
+
+    def _copy_html_resource_dirs(self, source_path: Path, destination_dir: Path) -> None:
+        if source_path.suffix.lower() not in {".html", ".htm"}:
+            return
+
+        for resource_dir in self._html_resource_dir_candidates(source_path):
+            if not resource_dir.is_dir():
+                continue
+            target = destination_dir / resource_dir.name
+            if target.exists():
+                shutil.rmtree(target)
+            shutil.copytree(resource_dir, target)
+
+    def _html_resource_dir_candidates(self, source_path: Path) -> list[Path]:
+        parent = source_path.parent
+        stem = source_path.stem
+        return [
+            parent / f"{stem}_files",
+            parent / f"{stem}.files",
+            parent / f"{stem} 文件",
+            parent / f"{stem}_文件",
+        ]

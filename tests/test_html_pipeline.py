@@ -16,6 +16,7 @@ HTML_SAMPLE = """<!doctype html>
 <html>
   <head>
     <title>Sample</title>
+    <link rel="stylesheet" href="sample_files/site.css">
     <style>.article { color: red; }</style>
     <script>const label = "Agent";</script>
   </head>
@@ -25,7 +26,7 @@ HTML_SAMPLE = """<!doctype html>
       <h1>Agent Guide</h1>
       <p>Agent calls a Tool Call and reads <a class="ref" href="https://example.com/docs">official docs</a>.</p>
       <figure>
-        <img src="images/cover.png" alt="Agent diagram">
+        <img src="sample_files/cover.png" alt="Agent diagram">
         <figcaption>Agent diagram</figcaption>
       </figure>
       <table><tr><th>Topic</th><td>Tool Call</td></tr></table>
@@ -44,6 +45,10 @@ class HTMLPipelineTest(unittest.TestCase):
             root = Path(tmp)
             source = root / "sample.html"
             source.write_text(HTML_SAMPLE, encoding="utf-8")
+            resource_dir = root / "sample_files"
+            resource_dir.mkdir()
+            (resource_dir / "site.css").write_text(".article { font-weight: 600; }", encoding="utf-8")
+            (resource_dir / "cover.png").write_bytes(b"fake-image")
             glossary = root / "glossary.csv"
             glossary.write_text(
                 "source_term,target_term\nAgent,Intelligent Agent\nTool Call,Tool Invocation\n",
@@ -62,6 +67,8 @@ class HTMLPipelineTest(unittest.TestCase):
             self.assertIn("html", artifacts)
             self.assertTrue(artifacts["html"].exists())
             self.assertTrue(artifacts["translated"].exists())
+            self.assertTrue((service.project_dir(project.id) / "source" / "sample_files" / "site.css").exists())
+            self.assertTrue((artifacts["html"].parent / "sample_files" / "site.css").exists())
 
             chunks = service.store.list_chunks(project.id)
             self.assertGreaterEqual(len(chunks), 1)
