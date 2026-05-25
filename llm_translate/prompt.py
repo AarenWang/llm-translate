@@ -50,6 +50,20 @@ class PromptBuilder:
                 "- Keep placeholders unchanged; EPUB attributes and resources are handled outside the model.\n"
             )
             return_type = "plain translated text"
+        elif document_format == "html":
+            system = (
+                "You are a structured HTML DOM text-node translation engine. "
+                "Translate only the natural-language text after each DOM node marker, "
+                "do not emit HTML, and never rewrite markers or placeholders."
+            )
+            extra_rules = (
+                "- This input contains one or more HTML DOM text nodes separated by markers like __LT_HTML_NODE_000001__.\n"
+                "- Keep every marker exactly as written and in the same order.\n"
+                "- Translate the text following each marker; do not translate the marker itself.\n"
+                "- Return plain translated text only, without HTML, Markdown wrappers, or explanations.\n"
+                "- Keep placeholders unchanged; HTML tags, attributes, links, images, and styles are handled outside the model.\n"
+            )
+            return_type = "plain translated text"
         else:
             system = (
                 "You are a structured long-document translation engine. Translate "
