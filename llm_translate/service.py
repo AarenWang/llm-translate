@@ -257,7 +257,7 @@ class TranslationService:
         print(f"[CHUNK_INFO] 待翻译块数: {len(chunks)}")
 
         # Batch chunks if enabled
-        if enable_batching and len(chunks) > 1:
+        if enable_batching and len(chunks) > 1 and not self._chunks_require_marker_splitting(chunks):
             print(f"[BATCHING] 启用chunk批处理优化")
             batcher = ChunkBatcher(
                 min_chars_for_batch=min_batch_chars,
@@ -644,14 +644,36 @@ class TranslationService:
             for chunk_id, translation in chunk_translations.items():
                 chunk = self.store.get_chunk(chunk_id)
                 if chunk.status == ChunkStatus.PENDING:
+                    chunk.protected_text = chunk.source_text
+                    chunk.target_text = translation
+                    chunk.restored_text = translation
+                    chunk.model_name = provider.model_name
+                    chunk.status = ChunkStatus.VALIDATING
+                    self.store.upsert_chunk(chunk)
+
+                    report = self.validator.validate_chunk(chunk, terms)
+                    self.store.add_validation_report(report)
+                    if report.status == "PASS":
+                        chunk.status = ChunkStatus.DONE
+                        chunk.error_message = None
+                    else:
+                        chunk.status = ChunkStatus.NEED_REVIEW
+                        chunk.error_message = "; ".join(issue["type"] for issue in report.issues)
+
                     self.store.update_chunk_translation(
                         chunk_id,
-                        protected_text=None,
-                        target_text=translation,
-                        restored_text=translation,
-                        status=ChunkStatus.TRANSLATED,
+                        protected_text=chunk.protected_text,
+                        target_text=chunk.target_text,
+                        restored_text=chunk.restored_text,
+                        status=chunk.status,
                         model_name=provider.model_name,
                     )
+                    if chunk.error_message:
+                        self.store.update_chunk_status(
+                            chunk_id,
+                            chunk.status,
+                            error_message=chunk.error_message,
+                        )
                     print(f"{batch_prefix} Chunk {chunk_id}: 翻译完成 ({len(translation)} 字符)")
                 else:
                     print(f"{batch_prefix} Chunk {chunk_id}: 状态为 {chunk.status.value}，跳过更新")
@@ -844,6 +866,10 @@ class TranslationService:
         for report in reports:
             if report.id not in existing_ids:
                 self.store.add_validation_report(report)
+
+    def _chunks_require_marker_splitting(self, chunks: list[TranslationChunk]) -> bool:
+        marker_formats = {"html", "latex", "srt", "vtt"}
+        return any(chunk.metadata.get("format") in marker_formats for chunk in chunks)
 
     def _copy_html_resource_dirs(self, source_path: Path, destination_dir: Path) -> None:
         if source_path.suffix.lower() not in {".html", ".htm"}:

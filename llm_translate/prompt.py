@@ -117,6 +117,30 @@ class PromptBuilder:
                 "- Do not add Markdown, HTML, explanations, titles, or wrappers.\n"
             )
             return_type = "plain translated text"
+        elif document_format == "latex":
+            system = (
+                "You are a structured LaTeX translation engine. Translate only natural-language text "
+                "after each LaTeX block marker, preserve LaTeX commands, and never rewrite markers or placeholders."
+            )
+            extra_rules = (
+                "- This input contains LaTeX text spans separated by markers like __LT_LATEX_BLOCK_000001__.\n"
+                "- Keep every marker exactly as written and in the same order.\n"
+                "- Preserve LaTeX commands, escaped characters, citations, references, and placeholders exactly.\n"
+                "- Do not add explanations, Markdown fences, or a complete LaTeX document wrapper.\n"
+            )
+            return_type = "plain translated text"
+        elif document_format in {"srt", "vtt"}:
+            system = (
+                "You are a subtitle cue translation engine. Translate only cue text after each cue marker, "
+                "preserve cue markers and placeholders, and do not emit timing lines."
+            )
+            extra_rules = (
+                "- This input contains subtitle cue text separated by markers like __LT_SUBTITLE_CUE_000001__.\n"
+                "- Keep every marker exactly as written and in the same order.\n"
+                "- Preserve line breaks inside cue text when they help readability.\n"
+                "- Do not add cue numbers, timestamps, WebVTT headers, Markdown, or explanations.\n"
+            )
+            return_type = "plain translated subtitle text"
         else:
             system = (
                 "You are a structured long-document translation engine. Translate "
@@ -211,6 +235,30 @@ Text to translate:
                 "- Do not add Markdown, HTML, explanations, titles, or wrappers.\n"
             )
             return_type = "plain translated text"
+        elif document_format == "latex":
+            system = (
+                "You are a structured LaTeX translation engine. Translate only natural-language text "
+                "after each LaTeX block marker, preserve LaTeX commands, and never rewrite markers or placeholders."
+            )
+            extra_rules = (
+                "- This input contains LaTeX text spans separated by markers like __LT_LATEX_BLOCK_000001__.\n"
+                "- Keep every marker exactly as written and in the same order.\n"
+                "- Preserve LaTeX commands, escaped characters, citations, references, and placeholders exactly.\n"
+                "- Do not add explanations, Markdown fences, or a complete LaTeX document wrapper.\n"
+            )
+            return_type = "plain translated text"
+        elif document_format in {"srt", "vtt"}:
+            system = (
+                "You are a subtitle cue translation engine. Translate only cue text after each cue marker, "
+                "preserve cue markers and placeholders, and do not emit timing lines."
+            )
+            extra_rules = (
+                "- This input contains subtitle cue text separated by markers like __LT_SUBTITLE_CUE_000001__.\n"
+                "- Keep every marker exactly as written and in the same order.\n"
+                "- Preserve line breaks inside cue text when they help readability.\n"
+                "- Do not add cue numbers, timestamps, WebVTT headers, Markdown, or explanations.\n"
+            )
+            return_type = "plain translated subtitle text"
         else:
             system = (
                 "You are a structured long-document translation engine. Translate "

@@ -7,9 +7,11 @@ from .docx import DocxFormatAdapter
 from .epub import EpubFormatAdapter
 from .html import HTMLFormatAdapter
 from .ipynb import IpynbFormatAdapter
+from .latex import LatexFormatAdapter
 from .markdown import MarkdownFormatAdapter
 from .plain_text import PlainTextFormatAdapter
 from .pdf import PdfFormatAdapter
+from .subtitle import SrtFormatAdapter, VttFormatAdapter
 
 
 class FormatRegistry:
@@ -38,6 +40,9 @@ def default_format_registry(
             MarkdownFormatAdapter(soft_input_tokens, max_input_tokens),
             PlainTextFormatAdapter(soft_input_tokens, max_input_tokens),
             HTMLFormatAdapter(soft_input_tokens, max_input_tokens),
+            LatexFormatAdapter(soft_input_tokens, max_input_tokens),
+            SrtFormatAdapter(soft_input_tokens, max_input_tokens),
+            VttFormatAdapter(soft_input_tokens, max_input_tokens),
             IpynbFormatAdapter(soft_input_tokens, max_input_tokens),
             EpubFormatAdapter(soft_input_tokens, max_input_tokens),
             DocxFormatAdapter(soft_input_tokens, max_input_tokens),
