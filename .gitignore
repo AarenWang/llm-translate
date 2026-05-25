@@ -10,5 +10,6 @@ __pycache__/
 smoke_workspace/
 data/
 *.egg-info/
-.env
+.env*
+!.env.example
 .claude/

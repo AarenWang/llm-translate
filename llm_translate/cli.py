@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import replace
 from pathlib import Path
+from dotenv import load_dotenv
 
 from .config import Settings
 from .llm import provider_from_name
@@ -13,6 +15,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="llm-translate")
     parser.add_argument("--db", type=Path, default=None)
     parser.add_argument("--workspace", type=Path, default=None)
+    parser.add_argument("--env", default=None, help="Environment file suffix (e.g., 'bigmode' loads .env-bigmode)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("init-db")
@@ -58,6 +61,20 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+
+    # Load environment file based on --env parameter
+    if args.env:
+        env_file = f".env-{args.env}"
+    else:
+        env_file = ".env"
+
+    # Load the environment file if it exists
+    if Path(env_file).exists():
+        load_dotenv(env_file, override=True)
+        print(f"[INFO] Loaded environment from: {env_file}")
+    else:
+        print(f"[WARNING] Environment file not found: {env_file}")
+
     settings = Settings.from_env()
     if args.db:
         settings = replace(
