@@ -3,10 +3,10 @@
 Structured long-document translation MVP.
 
 The first implementation focuses on the V1.0 Markdown workflow and now includes
-P0 Jupyter Notebook support:
+P0 Jupyter Notebook and EPUB support:
 
 1. create a project
-2. parse Markdown into blocks
+2. parse Markdown, Notebook, or EPUB content into blocks
 3. chunk by document structure
 4. protect non-translatable spans
 5. translate with a pluggable LLM provider
@@ -14,6 +14,8 @@ P0 Jupyter Notebook support:
 7. export translated and bilingual Markdown artifacts
 8. for `.ipynb`, export a translated notebook while preserving code cells,
    outputs, metadata, and attachments
+9. for `.epub`, export a translated book while preserving the EPUB container,
+   spine resources, links, images, and code/pre content
 
 The default provider is loaded from `.env` and is intended for DeepSeek. Local
 acceptance can still run without API keys by passing `--provider mock`. Real
@@ -26,11 +28,13 @@ without changing the translation pipeline.
 python -m llm_translate.cli init-db
 python -m llm_translate.cli run fixtures\sample.md --name sample --provider mock
 python -m llm_translate.cli run fixtures\sample.ipynb --name sample-notebook --provider mock
+python -m llm_translate.cli run path\to\book.epub --name sample-epub --provider mock
 python -m llm_translate.cli list-projects
 ```
 
 Artifacts are written under `.llm_translate/projects/{project_id}/artifacts`.
 Notebook projects also produce `translated.ipynb` or `translated.draft.ipynb`.
+EPUB projects also produce `translated.epub` or `translated.draft.epub`.
 
 ## DeepSeek Configuration
 

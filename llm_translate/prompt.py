@@ -37,6 +37,19 @@ class PromptBuilder:
                 "- Do not add notebook cell markers, JSON, explanations, or code execution output.\n"
                 "- Preserve HTML tags and attachment references represented by placeholders.\n"
             )
+            return_type = "translated Markdown"
+        elif document_format == "epub":
+            system = (
+                "You are a structured EPUB XHTML text-node translation engine. "
+                "Translate only the natural-language text from the current text node, "
+                "do not emit HTML, and never rewrite placeholders."
+            )
+            extra_rules = (
+                "- This input is plain text extracted from one EPUB XHTML text node.\n"
+                "- Return plain translated text only, without HTML, Markdown wrappers, or explanations.\n"
+                "- Keep placeholders unchanged; EPUB attributes and resources are handled outside the model.\n"
+            )
+            return_type = "plain translated text"
         else:
             system = (
                 "You are a structured long-document translation engine. Translate "
@@ -44,6 +57,7 @@ class PromptBuilder:
                 "rewrite placeholders."
             )
             extra_rules = ""
+            return_type = "translated Markdown"
         user = f"""Target language: {target_language}
 Style guide: {style_guide}
 Chapter context: {chapter_path or "N/A"}
@@ -52,7 +66,7 @@ Glossary terms that must be followed:
 {glossary_text}
 
 Rules:
-- Return only translated Markdown.
+- Return only {return_type}.
 - Do not add explanations.
 - Do not remove, duplicate, or modify placeholders like __LT_URL_000001__.
 - Preserve code, URLs, file paths, API paths, and references represented by placeholders.

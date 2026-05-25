@@ -11,3 +11,4 @@ smoke_workspace/
 data/
 *.egg-info/
 .env
+.claude/
