@@ -17,6 +17,8 @@ class ChunkingEngine:
     def build_chunks(self, project_id: str, blocks: list[DocumentBlock]) -> list[TranslationChunk]:
         if blocks and blocks[0].metadata.get("format") == "ipynb":
             return self._build_ipynb_chunks(project_id, blocks)
+        if blocks and blocks[0].metadata.get("format") == "docx":
+            return self._build_docx_chunks(project_id, blocks)
 
         chunks: list[TranslationChunk] = []
         pending: list[DocumentBlock] = []
@@ -88,6 +90,78 @@ class ChunkingEngine:
                         },
                     )
                 )
+        return chunks
+
+    def _build_docx_chunks(self, project_id: str, blocks: list[DocumentBlock]) -> list[TranslationChunk]:
+        """Build chunks for DOCX format.
+
+        Groups paragraphs by context while respecting token limits.
+        Headings (H1-H2) serve as natural chapter boundaries.
+
+        Args:
+            project_id: Translation project identifier
+            blocks: List of document blocks
+
+        Returns:
+            List of TranslationChunk objects
+        """
+        chunks: list[TranslationChunk] = []
+        pending: list[DocumentBlock] = []
+        pending_tokens = 0
+        current_chapter_id: str | None = None
+
+        def flush() -> None:
+            nonlocal pending, pending_tokens
+            if not pending:
+                return
+            chunk_order = len(chunks)
+
+            # Build chunk with metadata
+            chunk = TranslationChunk(
+                id=f"{project_id}_c_{chunk_order + 1:06d}",
+                project_id=project_id,
+                chapter_id=current_chapter_id,
+                chunk_order=chunk_order,
+                block_ids=[block.id for block in pending],
+                source_text="\n\n".join(block.source_text for block in pending),
+                metadata={
+                    "format": "docx",
+                    "chapter_id": current_chapter_id,
+                    "block_count": len(pending),
+                    "estimated_tokens": pending_tokens,
+                }
+            )
+            chunks.append(chunk)
+            pending = []
+            pending_tokens = 0
+
+        for block in blocks:
+            if not block.metadata.get("translatable", True):
+                continue
+
+            # Start new chunk at major headings
+            is_major_heading = (
+                block.block_type.startswith("docx_heading") and
+                block.metadata.get("heading_level", 99) <= 2
+            )
+            if is_major_heading:
+                flush()
+                current_chapter_id = block.id
+
+            block_tokens = self.estimator.estimate(block.source_text)
+
+            # Check if adding this block would exceed soft limit
+            if pending and pending_tokens + block_tokens > self.soft_input_tokens:
+                flush()
+
+            pending.append(block)
+            pending_tokens += block_tokens
+
+            # Force chunk if exceeding hard limit
+            if pending_tokens >= self.max_input_tokens:
+                flush()
+
+        flush()
         return chunks
 
     def _split_ipynb_markdown_cell(self, text: str) -> list[str]:

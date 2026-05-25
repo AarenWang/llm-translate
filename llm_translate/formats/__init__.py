@@ -1,4 +1,5 @@
 from .base import FormatAdapter, FormatContext
+from .docx import DocxFormatAdapter
 from .epub import EpubFormatAdapter
 from .ipynb import IpynbFormatAdapter
 from .markdown import MarkdownFormatAdapter
@@ -8,6 +9,7 @@ __all__ = [
     "FormatAdapter",
     "FormatContext",
     "FormatRegistry",
+    "DocxFormatAdapter",
     "EpubFormatAdapter",
     "IpynbFormatAdapter",
     "MarkdownFormatAdapter",

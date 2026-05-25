@@ -3,6 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from .base import FormatAdapter
+from .docx import DocxFormatAdapter
 from .epub import EpubFormatAdapter
 from .ipynb import IpynbFormatAdapter
 from .markdown import MarkdownFormatAdapter
@@ -34,5 +35,6 @@ def default_format_registry(
             MarkdownFormatAdapter(soft_input_tokens, max_input_tokens),
             IpynbFormatAdapter(soft_input_tokens, max_input_tokens),
             EpubFormatAdapter(soft_input_tokens, max_input_tokens),
+            DocxFormatAdapter(soft_input_tokens, max_input_tokens),
         ]
     )
