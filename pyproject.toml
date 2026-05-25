@@ -9,10 +9,15 @@ dependencies = [
   "html5lib>=1.1",
   "litellm>=1.0.0",
   "sqlalchemy>=2.0.0",
+  "trafilatura>=1.6.0",
+  "requests>=2.31.0",
 ]
 
 [project.optional-dependencies]
 dev = []
+playwright = [
+  "playwright>=1.40.0",
+]
 
 [project.scripts]
 llm-translate = "llm_translate.cli:main"
