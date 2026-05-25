@@ -116,7 +116,8 @@ class EpubParser:
             linear = spine_entry[1] if len(spine_entry) > 1 else None
             spine_snapshot.append({"id": item_id, "linear": linear})
             item = manifest.get(item_id)
-            if item is None or item.get_type() != ITEM_DOCUMENT:
+            # Handle both ITEM_DOCUMENT (type 9) and type 0 (some EPUBs use this)
+            if item is None or (item.get_type() != ITEM_DOCUMENT and item.get_type() != 0):
                 continue
 
             href = item.get_name()

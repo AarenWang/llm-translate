@@ -1,0 +1,4 @@
+Agent writes a plain text note with `inline_code`.
+See https://example.com/docs for Tool Call details.
+
+Second paragraph stays separate.

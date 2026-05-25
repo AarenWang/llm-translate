@@ -12,7 +12,19 @@ class LLMProvider(Protocol):
     model_name: str
 
     def translate(self, prompt: Prompt) -> str:
+        """Translate a single prompt."""
         ...
+
+    def translate_batch(self, prompts: list[Prompt]) -> list[str]:
+        """Translate multiple prompts efficiently (default implementation calls translate()).
+
+        Args:
+            prompts: List of prompts to translate
+
+        Returns:
+            List of translated texts (same order as input)
+        """
+        return [self.translate(prompt) for prompt in prompts]
 
 
 @dataclass

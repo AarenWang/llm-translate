@@ -52,6 +52,10 @@ def build_parser() -> argparse.ArgumentParser:
     translate.add_argument("--api-base", default=None)
     translate.add_argument("--api-key", default=None)
     translate.add_argument("--include-need-review", action="store_true")
+    translate.add_argument("--enable-batching", action="store_true", default=True, help="Enable chunk batching for efficiency (default: True)")
+    translate.add_argument("--disable-batching", action="store_true", help="Disable chunk batching")
+    translate.add_argument("--min-batch-chars", type=int, default=500, help="Minimum chars before considering batching (default: 500)")
+    translate.add_argument("--max-batch-chars", type=int, default=3000, help="Maximum chars per batch (default: 3000)")
 
     export = sub.add_parser("export")
     export.add_argument("project_id")
@@ -144,7 +148,15 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "translate":
         provider = build_provider(args, settings)
-        service.translate_project(args.project_id, provider, args.include_need_review)
+        enable_batching = not args.disable_batching if hasattr(args, 'disable_batching') else args.enable_batching
+        service.translate_project(
+            args.project_id,
+            provider,
+            args.include_need_review,
+            enable_batching=enable_batching,
+            min_batch_chars=args.min_batch_chars,
+            max_batch_chars=args.max_batch_chars,
+        )
         print("translated")
         return 0
 

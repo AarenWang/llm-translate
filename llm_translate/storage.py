@@ -259,6 +259,21 @@ class SQLiteStore:
             session.add_all(chunk_to_row(chunk) for chunk in chunks)
             session.commit()
 
+    def get_chunk(self, chunk_id: str) -> TranslationChunk | None:
+        """Get a single chunk by ID.
+
+        Args:
+            chunk_id: Chunk identifier
+
+        Returns:
+            TranslationChunk if found, None otherwise
+        """
+        with Session(self.engine) as session:
+            row = session.execute(
+                select(TranslationChunkRow).where(TranslationChunkRow.id == chunk_id)
+            ).scalar_one_or_none()
+            return chunk_from_row(row) if row else None
+
     def upsert_chunk(self, chunk: TranslationChunk) -> None:
         with Session(self.engine) as session:
             row = session.get(TranslationChunkRow, chunk.id)
@@ -283,6 +298,58 @@ class SQLiteStore:
                 row.metadata_json = dumps(chunk.metadata)
                 row.updated_at = _current_timestamp_sqlite(session)
             session.commit()
+
+    def update_chunk_translation(
+        self,
+        chunk_id: str,
+        protected_text: str | None,
+        target_text: str,
+        restored_text: str,
+        status: ChunkStatus,
+        model_name: str | None = None,
+    ) -> None:
+        """Update chunk translation results.
+
+        Args:
+            chunk_id: Chunk identifier
+            protected_text: Protected text before translation
+            target_text: Translated text with placeholders
+            restored_text: Translated text with original content restored
+            status: New chunk status
+            model_name: Model name used for translation
+        """
+        with Session(self.engine) as session:
+            row = session.get(TranslationChunkRow, chunk_id)
+            if row:
+                row.protected_text = protected_text
+                row.target_text = target_text
+                row.restored_text = restored_text
+                row.status = status.value
+                if model_name:
+                    row.model_name = model_name
+                row.updated_at = _current_timestamp_sqlite(session)
+                session.commit()
+
+    def update_chunk_status(
+        self,
+        chunk_id: str,
+        status: ChunkStatus,
+        error_message: str | None = None,
+    ) -> None:
+        """Update chunk status.
+
+        Args:
+            chunk_id: Chunk identifier
+            status: New chunk status
+            error_message: Error message if status is FAILED
+        """
+        with Session(self.engine) as session:
+            row = session.get(TranslationChunkRow, chunk_id)
+            if row:
+                row.status = status.value
+                row.error_message = error_message
+                row.updated_at = _current_timestamp_sqlite(session)
+                session.commit()
 
     def list_chunks(
         self,

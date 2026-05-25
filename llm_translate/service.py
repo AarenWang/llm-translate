@@ -7,6 +7,7 @@ from pathlib import Path
 import shutil
 from uuid import uuid4
 
+from .batching import ChunkBatcher, ChunkBatch
 from .config import DEFAULT_STYLE_GUIDE, Settings
 from .domain import (
     ChunkStatus,
@@ -229,6 +230,9 @@ class TranslationService:
         project_id: str,
         provider: LLMProvider,
         include_need_review: bool = False,
+        enable_batching: bool = True,
+        min_batch_chars: int = 500,
+        max_batch_chars: int = 3000,
     ) -> None:
         print(f"[TRANSLATE_WORKFLOW] ========================================")
         print(f"[TRANSLATE_WORKFLOW] 开始翻译项目")
@@ -251,6 +255,33 @@ class TranslationService:
 
         print(f"[GLOSSARY_INFO] 术语表条目数: {len(terms)}")
         print(f"[CHUNK_INFO] 待翻译块数: {len(chunks)}")
+
+        # Batch chunks if enabled
+        if enable_batching and len(chunks) > 1:
+            print(f"[BATCHING] 启用chunk批处理优化")
+            batcher = ChunkBatcher(
+                min_chars_for_batch=min_batch_chars,
+                max_chars_per_batch=max_batch_chars,
+            )
+
+            # Prepare chunks for batching
+            chunk_tuples = [(chunk.id, chunk.source_text) for chunk in chunks]
+            batches = batcher.create_batches(chunk_tuples)
+
+            stats = batcher.get_batch_stats(batches)
+            print(f"[BATCHING] 批处理统计:")
+            print(f"[BATCHING]   原始chunk数: {stats['total_chunks']}")
+            print(f"[BATCHING]   合并为batch数: {stats['total_batches']}")
+            print(f"[BATCHING]   平均每batch包含: {stats['avg_chunks_per_batch']:.1f} 个chunks")
+            print(f"[BATCHING]   单chunk批次: {stats['batch_size_distribution']['single_chunk_batches']}")
+            print(f"[BATCHING]   多chunk批次: {stats['batch_size_distribution']['multi_chunk_batches']}")
+            print(f"[BATCHING]   API调用减少: {stats['total_chunks'] - stats['total_batches']} 次")
+
+            # Translate batches instead of individual chunks
+            self._translate_chunks_with_batching(
+                project_id, project, batches, batcher, provider, terms
+            )
+            return
 
         self.store.update_project_status(project_id, ProjectStatus.TRANSLATING)
         print(f"[STATUS_UPDATE] 项目状态更新为: TRANSLATING")
@@ -431,6 +462,216 @@ class TranslationService:
 
         return project, paths
 
+    def _translate_chunks_with_batching(
+        self,
+        project_id: str,
+        project: TranslationProject,
+        batches: list[ChunkBatch],
+        batcher: ChunkBatcher,
+        provider: LLMProvider,
+        terms: list[GlossaryTerm],
+    ) -> None:
+        """Translate chunks using batching strategy.
+
+        Args:
+            project_id: Project identifier
+            project: Translation project
+            batches: List of chunk batches
+            batcher: Chunk batcher instance
+            provider: LLM provider
+            terms: Glossary terms
+        """
+        self.store.update_project_status(project_id, ProjectStatus.TRANSLATING)
+        print(f"[STATUS_UPDATE] 项目状态更新为: TRANSLATING")
+
+        success_count = 0
+        failed_count = 0
+        skipped_count = 0
+        total_batches = len(batches)
+
+        print(f"[BATCH_TRANSLATE] 开始批处理翻译...")
+        print(f"[BATCH_TRANSLATE] 总批次数: {total_batches}")
+        print(f"[BATCH_TRANSLATE] ========================================")
+
+        for batch_index, batch in enumerate(batches, 1):
+            progress_percent = (batch_index - 1) / total_batches * 100
+
+            print(f"[BATCH_{batch_index:03d}] ========================================")
+            print(f"[BATCH_{batch_index:03d}] 开始翻译批次 {batch_index}/{total_batches} (进度: {progress_percent:.1f}%)")
+            print(f"[BATCH_{batch_index:03d}] 包含chunks: {len(batch.chunks)}")
+            print(f"[BATCH_{batch_index:03d}] 总字符数: {batch.total_chars}")
+
+            if len(batch.chunks) == 1:
+                # Single chunk: use regular translation
+                chunk_id, source_text = batch.chunks[0]
+                chunk = self.store.get_chunk(chunk_id)
+
+                if chunk.status != ChunkStatus.PENDING:
+                    print(f"[BATCH_{batch_index:03d}] 单chunk批次，状态为 {chunk.status.value}，跳过")
+                    skipped_count += 1
+                    continue
+
+                result = self._translate_chunk(project, chunk, provider, terms, batch_index, total_batches)
+                if result == "success":
+                    success_count += 1
+                    print(f"[BATCH_{batch_index:03d}] [OK] 翻译成功")
+                elif result == "failed":
+                    failed_count += 1
+                    print(f"[BATCH_{batch_index:03d}] [FAIL] 翻译失败")
+                elif result == "skipped":
+                    skipped_count += 1
+                    print(f"[BATCH_{batch_index:03d}] 跳过（已有有效翻译）")
+            else:
+                # Multiple chunks: use batch translation
+                result = self._translate_batch(project, batch, batcher, provider, terms, batch_index, total_batches)
+                if result == "success":
+                    success_count += len(batch.chunks)
+                    print(f"[BATCH_{batch_index:03d}] [OK] 批次翻译成功 ({len(batch.chunks)} chunks)")
+                elif result == "failed":
+                    failed_count += len(batch.chunks)
+                    print(f"[BATCH_{batch_index:03d}] [FAIL] 批次翻译失败 ({len(batch.chunks)} chunks)")
+                elif result == "skipped":
+                    skipped_count += len(batch.chunks)
+                    print(f"[BATCH_{batch_index:03d}] 跳过批次 ({len(batch.chunks)} chunks)")
+
+            # 更新进度
+            progress_percent = batch_index / total_batches * 100
+            print(f"[BATCH_{batch_index:03d}] 进度: {progress_percent:.1f}% ({batch_index}/{total_batches})")
+            print(f"[BATCH_{batch_index:03d}] ========================================")
+
+            # 每翻译完一个批次显示总体进度
+            print(f"[BATCH_TRANSLATE] 总进度: {progress_percent:.1f}% | 成功: {success_count} | 失败: {failed_count} | 跳过: {skipped_count}")
+
+        remaining = self.store.list_chunks(project_id, statuses={ChunkStatus.PENDING, ChunkStatus.FAILED})
+
+        print(f"[BATCH_TRANSLATE] ========================================")
+        print(f"[BATCH_TRANSLATE] 批处理翻译完成")
+        print(f"[BATCH_TRANSLATE] 总chunks数: {sum(len(batch.chunks) for batch in batches)}")
+        print(f"[BATCH_TRANSLATE] 成功: {success_count}")
+        print(f"[BATCH_TRANSLATE] 失败: {failed_count}")
+        print(f"[BATCH_TRANSLATE] 跳过: {skipped_count}")
+        print(f"[BATCH_TRANSLATE] 剩余待处理: {len(remaining)}")
+
+        if remaining:
+            self.store.update_project_status(project_id, ProjectStatus.FAILED)
+            print(f"[STATUS_UPDATE] 项目状态更新为: FAILED")
+        else:
+            self.store.update_project_status(project_id, ProjectStatus.COMPLETED)
+            print(f"[STATUS_UPDATE] 项目状态更新为: COMPLETED")
+
+        print(f"[BATCH_TRANSLATE] ========================================")
+
+    def _translate_batch(
+        self,
+        project: TranslationProject,
+        batch: ChunkBatch,
+        batcher: ChunkBatcher,
+        provider: LLMProvider,
+        terms: list[GlossaryTerm],
+        batch_index: int = 0,
+        total_batches: int = 0,
+    ) -> str:
+        """Translate a batch of chunks.
+
+        Args:
+            project: Translation project
+            batch: Chunk batch to translate
+            batcher: Chunk batcher instance
+            provider: LLM provider
+            terms: Glossary terms
+            batch_index: Current batch index (for logging)
+            total_batches: Total batch count (for logging)
+
+        Returns:
+            Translation result status: "success", "failed", "skipped"
+        """
+        batch_prefix = f"[BATCH_{batch_index:03d}]" if batch_index > 0 else "[BATCH]"
+
+        # Check if all chunks are PENDING
+        chunk_ids = [chunk_id for chunk_id, _ in batch.chunks]
+        chunks = [self.store.get_chunk(chunk_id) for chunk_id in chunk_ids]
+
+        pending_chunks = [c for c in chunks if c.status == ChunkStatus.PENDING]
+        if not pending_chunks:
+            print(f"{batch_prefix} 所有chunks已有翻译，跳过批次")
+            return "skipped"
+
+        print(f"{batch_prefix} 待翻译chunks: {len(pending_chunks)}/{len(chunks)}")
+
+        # Build batch translation prompt
+        separator = batch.separator
+        combined_source = separator.join(source_text for _, source_text in batch.chunks)
+
+        # Create prompt for batch translation
+        prompt_builder = PromptBuilder()
+        prompt_builder.add_style_guide(DEFAULT_STYLE_GUIDE)
+        prompt_builder.add_translation_prompt(
+            combined_source,
+            project.input_format,
+            target_language=project.target_language,
+            chunk_count=len(batch.chunks),
+            is_batch=True,
+        )
+
+        if terms:
+            prompt_builder.add_glossary(terms)
+
+        prompt = prompt_builder.build()
+
+        # Protect content
+        temp_chunk_id = f"batch_{batch_index:06d}"
+        protection_result = self.protection.protect(project.id, temp_chunk_id, combined_source)
+        protected_text = protection_result.protected_text
+        protection_map = protection_result.spans
+
+        if protection_map:
+            print(f"{batch_prefix} 保护内容替换数: {len(protection_map)}")
+
+        try:
+            # Translate batch
+            translated_protected = provider.translate(prompt)
+
+            # Restore protected content
+            translated_text = self.protection.restore(
+                translated_protected,
+                protection_map,
+            )
+
+            # Split batch result into individual chunks
+            chunk_translations = batcher.split_batch_result(batch, translated_text)
+
+            # Update each chunk with its translation
+            for chunk_id, translation in chunk_translations.items():
+                chunk = self.store.get_chunk(chunk_id)
+                if chunk.status == ChunkStatus.PENDING:
+                    self.store.update_chunk_translation(
+                        chunk_id,
+                        protected_text=None,
+                        target_text=translation,
+                        restored_text=translation,
+                        status=ChunkStatus.TRANSLATED,
+                        model_name=provider.model_name,
+                    )
+                    print(f"{batch_prefix} Chunk {chunk_id}: 翻译完成 ({len(translation)} 字符)")
+                else:
+                    print(f"{batch_prefix} Chunk {chunk_id}: 状态为 {chunk.status.value}，跳过更新")
+
+            return "success"
+
+        except Exception as exc:
+            error_msg = f"批次翻译失败: {exc}"
+            print(f"{batch_prefix} [ERROR] {error_msg}")
+
+            # Mark all pending chunks in batch as failed
+            for chunk in pending_chunks:
+                self.store.update_chunk_status(
+                    chunk.id,
+                    ChunkStatus.FAILED,
+                    error_message=error_msg,
+                )
+
+            return "failed"
+
     def _translate_chunk(
         self,
         project: TranslationProject,
@@ -479,7 +720,7 @@ class TranslationService:
                 print(f"{chunk_prefix} [步骤2/6] 构建翻译提示...")
                 chapter_path = self.formats.get(project.input_format).chapter_path(chunk)
                 document_format = self.formats.get(project.input_format).prompt_document_format()
-                prompt = self.prompt_builder.build(
+                prompt = self.prompt_builder.build_legacy(
                     chunk=chunk,
                     target_language=project.target_language,
                     glossary_terms=terms,
