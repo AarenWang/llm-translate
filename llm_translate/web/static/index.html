@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>llm-translate Workspaces</title>
+    <link rel="stylesheet" href="/static/styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">LT</div>
+          <div>
+            <h1>Workspaces</h1>
+            <p id="workspace-count">0 found</p>
+          </div>
+        </div>
+        <div class="sidebar-tools">
+          <button id="refresh-workspaces" class="icon-button" title="Refresh workspaces" aria-label="Refresh workspaces">↻</button>
+        </div>
+        <div id="workspace-list" class="workspace-list"></div>
+      </aside>
+
+      <main class="main">
+        <header class="topbar">
+          <div>
+            <div id="crumbs" class="crumbs">No workspace selected</div>
+            <h2 id="page-title">Workspace Dashboard</h2>
+          </div>
+          <div class="topbar-actions">
+            <input id="project-search" class="search-input" type="search" placeholder="Search projects" />
+            <select id="project-status-filter" class="select-input" aria-label="Project status">
+              <option value="">All statuses</option>
+            </select>
+            <select id="project-format-filter" class="select-input" aria-label="Project format">
+              <option value="">All formats</option>
+            </select>
+          </div>
+        </header>
+
+        <section id="summary-band" class="summary-band"></section>
+
+        <section class="content-grid">
+          <div class="panel project-panel">
+            <div class="panel-header">
+              <h3>Projects</h3>
+              <span id="project-total" class="muted">0</span>
+            </div>
+            <div class="table-wrap">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Name</th>
+                    <th>Format</th>
+                    <th>Status</th>
+                    <th>Chunks</th>
+                    <th>Issues</th>
+                    <th>Updated</th>
+                  </tr>
+                </thead>
+                <tbody id="project-table"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="panel detail-panel">
+            <div id="project-detail"></div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div id="chunk-drawer" class="drawer" aria-hidden="true">
+      <div class="drawer-backdrop" data-close-drawer></div>
+      <section class="drawer-panel">
+        <div class="drawer-header">
+          <div>
+            <div id="chunk-subtitle" class="crumbs">Chunk</div>
+            <h3 id="chunk-title">Chunk Detail</h3>
+          </div>
+          <button class="icon-button" data-close-drawer title="Close" aria-label="Close">×</button>
+        </div>
+        <div id="chunk-detail" class="drawer-body"></div>
+      </section>
+    </div>
+
+    <script src="/static/app.js"></script>
+  </body>
+</html>
+
