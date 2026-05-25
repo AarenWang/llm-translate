@@ -1,8 +1,9 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
-from dataclasses import replace
+from dataclasses import asdict, replace
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -20,6 +21,14 @@ def build_parser() -> argparse.ArgumentParser:
 
     sub.add_parser("init-db")
     sub.add_parser("list-projects")
+
+    check_pdf = sub.add_parser("check-pdf")
+    check_pdf.add_argument("source", type=Path)
+    check_pdf.add_argument(
+        "--fail-on-not-clean",
+        action="store_true",
+        help="Exit with status 2 when the PDF is not accepted for phase-1 translation.",
+    )
 
     create = sub.add_parser("create")
     create.add_argument("source", type=Path)
@@ -104,6 +113,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"{project['done_chunks'] or 0}/{project['total_chunks'] or 0} "
                 f"{project['name']}"
             )
+        return 0
+
+    if args.command == "check-pdf":
+        report = service.check_pdf_cleanliness(args.source)
+        print(json.dumps(asdict(report), ensure_ascii=False, indent=2))
+        if args.fail_on_not_clean and not report.can_translate_phase1:
+            return 2
         return 0
 
     if args.command == "create":

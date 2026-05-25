@@ -9,6 +9,7 @@ from .html import HTMLFormatAdapter
 from .ipynb import IpynbFormatAdapter
 from .markdown import MarkdownFormatAdapter
 from .plain_text import PlainTextFormatAdapter
+from .pdf import PdfFormatAdapter
 
 
 class FormatRegistry:
@@ -40,5 +41,6 @@ def default_format_registry(
             IpynbFormatAdapter(soft_input_tokens, max_input_tokens),
             EpubFormatAdapter(soft_input_tokens, max_input_tokens),
             DocxFormatAdapter(soft_input_tokens, max_input_tokens),
+            PdfFormatAdapter(),
         ]
     )

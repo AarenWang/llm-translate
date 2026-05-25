@@ -4,6 +4,7 @@ from .epub import EpubFormatAdapter
 from .ipynb import IpynbFormatAdapter
 from .markdown import MarkdownFormatAdapter
 from .plain_text import PlainTextFormatAdapter
+from .pdf import PdfFormatAdapter
 from .registry import FormatRegistry, default_format_registry
 
 __all__ = [
@@ -15,5 +16,6 @@ __all__ = [
     "IpynbFormatAdapter",
     "MarkdownFormatAdapter",
     "PlainTextFormatAdapter",
+    "PdfFormatAdapter",
     "default_format_registry",
 ]

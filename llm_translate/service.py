@@ -17,6 +17,7 @@ from .domain import (
 )
 from .formats import FormatContext, FormatRegistry, default_format_registry
 from .llm import LLMProvider
+from .pdf_cleanliness import PdfCleanlinessChecker, PdfCleanlinessReport
 from .prompt import PromptBuilder
 from .protection import ProtectionEngine
 from .storage import SQLiteStore
@@ -37,6 +38,9 @@ class TranslationService:
 
     def init_db(self) -> None:
         self.store.init_db()
+
+    def check_pdf_cleanliness(self, source_path: Path) -> PdfCleanlinessReport:
+        return PdfCleanlinessChecker().check(source_path)
 
     def create_project(
         self,
