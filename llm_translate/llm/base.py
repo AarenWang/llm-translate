@@ -83,6 +83,60 @@ class DeepSeekProvider(LiteLLMProvider):
     name: str = "deepseek"
 
 
+@dataclass
+class ChatGPTProvider(LiteLLMProvider):
+    """ChatGPT 订阅 API 提供者，使用 OAuth 设备代码流程认证
+
+    首次使用时会自动引导完成 OAuth 认证流程，token 会保存在本地。
+    litellm 已经完成认证并本地存了认证 token，可直接使用。
+    """
+    name: str = "chatgpt"
+
+    def translate(self, prompt: Prompt) -> str:
+        try:
+            from litellm import completion
+        except ImportError as exc:
+            raise RuntimeError(
+                "LiteLLM is not installed. Install project dependencies or use --provider mock."
+            ) from exc
+
+        # 使用 Chat Completions API（会桥接到 Responses API）
+        # ChatGPT 订阅不支持 max_tokens 等参数，litellm 会自动过滤这些参数
+        kwargs = {
+            "model": self.model_name,
+            "messages": [
+                {"role": "system", "content": prompt.system},
+                {"role": "user", "content": prompt.user},
+            ],
+        }
+        # ChatGPT 订阅使用 OAuth 认证，通常不需要 api_base 和 api_key
+        # 但如果提供了这些参数，litellm 会优先使用它们而不是 OAuth 认证
+        if self.api_base:
+            kwargs["api_base"] = self.api_base
+        if self.api_key:
+            kwargs["api_key"] = self.api_key
+
+        try:
+            response = completion(**kwargs)
+            # 处理流式响应聚合的情况
+            if hasattr(response, 'choices') and len(response.choices) > 0:
+                message = response.choices[0].message
+                if hasattr(message, 'content') and message.content:
+                    return message.content
+            # 如果没有 choices，可能是直接的响应对象
+            if hasattr(response, 'content'):
+                return response.content
+            # 最后尝试转换为字符串
+            return str(response)
+        except Exception as e:
+            # 如果 API 调用失败，提供更友好的错误信息
+            raise RuntimeError(
+                f"ChatGPT API 调用失败: {e}\n"
+                f"提示：首次使用需要完成 OAuth 认证流程。\n"
+                f"请确保已安装最新版本的 litellm: pip install --upgrade litellm"
+            ) from e
+
+
 def provider_from_name(
     name: str,
     model_name: str | None = None,
@@ -98,4 +152,8 @@ def provider_from_name(
     if name == "deepseek":
         resolved_model = model_name or "deepseek/deepseek-chat"
         return DeepSeekProvider(model_name=resolved_model, api_base=api_base, api_key=api_key)
+    if name == "chatgpt":
+        # ChatGPT 订阅默认模型
+        resolved_model = model_name or "chatgpt/gpt-5.4"
+        return ChatGPTProvider(model_name=resolved_model, api_base=api_base, api_key=api_key)
     raise ValueError(f"unknown provider: {name}")

@@ -5,6 +5,9 @@ const state = {
   project: null,
   projectDetail: null,
   chunks: [],
+  chunksTotal: 0,
+  chunksLimit: 100,
+  chunksOffset: 0,
   reports: [],
   activeTab: "chunks",
 };
@@ -209,6 +212,9 @@ function renderProjects() {
 async function selectProject(projectId, rerender = true) {
   state.project = projectId;
   state.activeTab = "chunks";
+  state.chunks = [];
+  state.chunksTotal = 0;
+  state.chunksOffset = 0;
   if (rerender) renderProjects();
   const detail = await api(`/api/workspaces/${encode(state.workspace)}/projects/${encode(projectId)}`);
   state.projectDetail = detail;
@@ -219,9 +225,17 @@ async function selectProject(projectId, rerender = true) {
   renderProjectDetail();
 }
 
-async function loadChunks() {
-  const data = await api(`/api/workspaces/${encode(state.workspace)}/projects/${encode(state.project)}/chunks`);
-  state.chunks = data.chunks || [];
+async function loadChunks({ append = false } = {}) {
+  const offset = append ? state.chunks.length : 0;
+  const params = new URLSearchParams({
+    limit: String(state.chunksLimit),
+    offset: String(offset),
+  });
+  const data = await api(`/api/workspaces/${encode(state.workspace)}/projects/${encode(state.project)}/chunks?${params.toString()}`);
+  const chunks = data.chunks || [];
+  state.chunks = append ? [...state.chunks, ...chunks] : chunks;
+  state.chunksTotal = data.total || state.chunks.length;
+  state.chunksOffset = state.chunks.length;
 }
 
 async function loadReports() {
@@ -245,7 +259,7 @@ function renderProjectDetail() {
         ${kv("Source", escapeHtml(project.source_file_name))}
       </div>
       <div class="tabbar">
-        ${tabButton("chunks", `Chunks ${state.chunks.length}`)}
+        ${tabButton("chunks", `Chunks ${fmtNumber(state.chunks.length)} / ${fmtNumber(state.chunksTotal)}`)}
         ${tabButton("validation", `Validation ${state.reports.length}`)}
         ${tabButton("artifacts", `Artifacts ${(state.projectDetail.artifacts || []).length}`)}
         ${tabButton("schema", "Schema")}
@@ -261,6 +275,14 @@ function renderProjectDetail() {
   });
   document.querySelectorAll("[data-chunk]").forEach((button) => {
     button.addEventListener("click", () => openChunk(button.dataset.chunk));
+  });
+  document.querySelectorAll("[data-load-more-chunks]").forEach((button) => {
+    button.addEventListener("click", async () => {
+      button.disabled = true;
+      button.textContent = "Loading";
+      await loadChunks({ append: true });
+      renderProjectDetail();
+    });
   });
 }
 
@@ -280,9 +302,21 @@ function renderActiveTab(tab) {
 }
 
 function renderChunks() {
-  return state.chunks.length
-    ? `<div class="chunk-list">${state.chunks.map(renderChunkRow).join("")}</div>`
-    : `<div class="empty-state">No chunks</div>`;
+  if (!state.chunks.length) {
+    return `<div class="empty-state">No chunks</div>`;
+  }
+  const hasMore = state.chunks.length < state.chunksTotal;
+  return `
+    <div class="chunk-list">${state.chunks.map(renderChunkRow).join("")}</div>
+    <div class="list-footer">
+      <span>${fmtNumber(state.chunks.length)} of ${fmtNumber(state.chunksTotal)} chunks loaded</span>
+      ${
+        hasMore
+          ? `<button class="text-button primary" data-load-more-chunks>More</button>`
+          : `<span class="muted">All chunks loaded</span>`
+      }
+    </div>
+  `;
 }
 
 function renderChunkRow(chunk) {

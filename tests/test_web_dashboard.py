@@ -36,17 +36,21 @@ class WebDashboardTest(unittest.TestCase):
                 status=ProjectStatus.EXPORTED,
             )
             store.create_project(project)
-            chunk = TranslationChunk(
-                id="chunk_web_1",
-                project_id=project.id,
-                chapter_id=None,
-                chunk_order=0,
-                block_ids=[],
-                source_text="Agent writes notes.",
-                restored_text="Agent writes notes.",
-                status=ChunkStatus.DONE,
-            )
-            store.replace_chunks(project.id, [chunk])
+            chunks = [
+                TranslationChunk(
+                    id=f"chunk_web_{index + 1}",
+                    project_id=project.id,
+                    chapter_id=None,
+                    chunk_order=index,
+                    block_ids=[],
+                    source_text=f"Agent writes notes {index + 1}.",
+                    restored_text=f"Agent writes notes {index + 1}.",
+                    status=ChunkStatus.DONE,
+                )
+                for index in range(105)
+            ]
+            chunk = chunks[0]
+            store.replace_chunks(project.id, chunks)
             store.add_validation_report(
                 ValidationReport(
                     id="vr_web",
@@ -72,8 +76,17 @@ class WebDashboardTest(unittest.TestCase):
 
             detail = client.get("/api/workspaces/.llm_translate_web/projects/prj_web")
             self.assertEqual(detail.status_code, 200)
-            self.assertEqual(detail.json()["chunk_status_counts"], {"DONE": 1})
+            self.assertEqual(detail.json()["chunk_status_counts"], {"DONE": 105})
             self.assertEqual(len(detail.json()["artifacts"]), 1)
+
+            chunk_page = client.get("/api/workspaces/.llm_translate_web/projects/prj_web/chunks")
+            self.assertEqual(chunk_page.status_code, 200)
+            self.assertEqual(chunk_page.json()["total"], 105)
+            self.assertEqual(len(chunk_page.json()["chunks"]), 100)
+
+            next_chunk_page = client.get("/api/workspaces/.llm_translate_web/projects/prj_web/chunks?offset=100")
+            self.assertEqual(next_chunk_page.status_code, 200)
+            self.assertEqual(len(next_chunk_page.json()["chunks"]), 5)
 
             chunk_detail = client.get("/api/workspaces/.llm_translate_web/projects/prj_web/chunks/chunk_web_1")
             self.assertEqual(chunk_detail.status_code, 200)
@@ -82,4 +95,3 @@ class WebDashboardTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

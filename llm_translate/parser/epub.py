@@ -14,6 +14,7 @@ from ..domain import DocumentBlock
 
 
 TRANSLATABLE_ANCESTORS = frozenset({
+    "a",
     "h1",
     "h2",
     "h3",
@@ -46,6 +47,7 @@ class EpubDocument:
     file_name: str
     media_type: str | None
     spine_index: int
+    is_nav: bool = False
 
 
 @dataclass(frozen=True)
@@ -110,6 +112,7 @@ class EpubParser:
         documents: list[EpubDocument] = []
         blocks: list[DocumentBlock] = []
         spine_snapshot: list[dict[str, Any]] = []
+        processed_item_ids: set[str] = set()
 
         for spine_index, spine_entry in enumerate(book.spine):
             item_id = spine_entry[0]
@@ -117,54 +120,22 @@ class EpubParser:
             spine_snapshot.append({"id": item_id, "linear": linear})
             item = manifest.get(item_id)
             # Handle both ITEM_DOCUMENT (type 9) and type 0 (some EPUBs use this)
-            if item is None or (item.get_type() != ITEM_DOCUMENT and item.get_type() != 0):
+            if item is None or not self._is_document_item(item):
                 continue
 
-            href = item.get_name()
-            document = EpubDocument(
-                item_id=item_id,
-                href=href,
-                file_name=self._archive_file_name(href, archive_names),
-                media_type=getattr(item, "media_type", None),
-                spine_index=spine_index,
-            )
+            document = self._document_from_item(item_id, item, archive_names, spine_index=spine_index)
             documents.append(document)
-            html = item.get_content()
-            soup = self.parse_html_safely(html)
+            processed_item_ids.add(item_id)
+            self._append_document_blocks(project_id, document, item.get_content(), blocks)
 
-            for text_index, text_node in enumerate(self._iter_translatable_text_nodes(soup)):
-                raw_text = str(text_node)
-                stripped = raw_text.strip()
-                if not stripped:
-                    continue
-                parent = text_node.parent
-                tag_name = parent.name.lower() if parent and parent.name else "text"
-                prefix = raw_text[: len(raw_text) - len(raw_text.lstrip())]
-                suffix = raw_text[len(raw_text.rstrip()) :]
-                block_order = len(blocks)
-                blocks.append(
-                    DocumentBlock(
-                        id=f"{project_id}_b_{block_order + 1:06d}",
-                        project_id=project_id,
-                        parent_id=None,
-                        block_order=block_order,
-                        block_type=f"epub_{tag_name}_text",
-                        level=self._heading_level(tag_name),
-                        source_text=stripped,
-                        metadata={
-                            "format": "epub",
-                            "item_id": document.item_id,
-                            "href": document.href,
-                            "file_name": document.file_name,
-                            "spine_index": document.spine_index,
-                            "text_node_index": text_index,
-                            "tag": tag_name,
-                            "prefix": prefix,
-                            "suffix": suffix,
-                            "translatable": True,
-                        },
-                    )
-                )
+        for item_id, item in manifest.items():
+            if item_id in processed_item_ids:
+                continue
+            if not self._is_document_item(item) or not self._is_nav_item(item):
+                continue
+            document = self._document_from_item(item_id, item, archive_names, spine_index=-1, is_nav=True)
+            documents.append(document)
+            self._append_document_blocks(project_id, document, item.get_content(), blocks)
 
         return EpubParseResult(
             blocks=blocks,
@@ -172,6 +143,81 @@ class EpubParser:
             spine=spine_snapshot,
             manifest_count=len(manifest),
         )
+
+    def _append_document_blocks(
+        self,
+        project_id: str,
+        document: EpubDocument,
+        html: bytes,
+        blocks: list[DocumentBlock],
+    ) -> None:
+        soup = self.parse_html_safely(html)
+        for text_index, text_node in enumerate(self._iter_translatable_text_nodes(soup)):
+            raw_text = str(text_node)
+            stripped = raw_text.strip()
+            if not stripped:
+                continue
+            parent = text_node.parent
+            tag_name = parent.name.lower() if parent and parent.name else "text"
+            prefix = raw_text[: len(raw_text) - len(raw_text.lstrip())]
+            suffix = raw_text[len(raw_text.rstrip()) :]
+            block_order = len(blocks)
+            blocks.append(
+                DocumentBlock(
+                    id=f"{project_id}_b_{block_order + 1:06d}",
+                    project_id=project_id,
+                    parent_id=None,
+                    block_order=block_order,
+                    block_type=f"epub_{tag_name}_text",
+                    level=self._heading_level(tag_name),
+                    source_text=stripped,
+                    metadata={
+                        "format": "epub",
+                        "item_id": document.item_id,
+                        "href": document.href,
+                        "file_name": document.file_name,
+                        "spine_index": document.spine_index,
+                        "is_nav": document.is_nav,
+                        "text_node_index": text_index,
+                        "tag": tag_name,
+                        "prefix": prefix,
+                        "suffix": suffix,
+                        "translatable": True,
+                    },
+                )
+            )
+
+    def _document_from_item(
+        self,
+        item_id: str,
+        item: Any,
+        archive_names: set[str],
+        spine_index: int,
+        is_nav: bool = False,
+    ) -> EpubDocument:
+        href = item.get_name()
+        return EpubDocument(
+            item_id=item_id,
+            href=href,
+            file_name=self._archive_file_name(href, archive_names),
+            media_type=getattr(item, "media_type", None),
+            spine_index=spine_index,
+            is_nav=is_nav,
+        )
+
+    def _is_document_item(self, item: Any) -> bool:
+        return item.get_type() in {ITEM_DOCUMENT, 0}
+
+    def _is_nav_item(self, item: Any) -> bool:
+        properties: list[str] = []
+        get_properties = getattr(item, "get_properties", None)
+        if callable(get_properties):
+            properties = list(get_properties() or [])
+        else:
+            properties = list(getattr(item, "properties", []) or [])
+        item_id = str(item.get_id() or "").lower()
+        href = str(item.get_name() or "").lower()
+        return "nav" in properties or item_id == "nav" or href.endswith(("/nav.xhtml", "/nav.html", "nav.xhtml", "nav.html"))
 
     def _iter_translatable_text_nodes(self, soup: BeautifulSoup) -> list[NavigableString]:
         """Extract translatable text nodes using parent type caching for better performance.

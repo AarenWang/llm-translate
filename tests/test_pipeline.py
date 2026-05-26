@@ -97,6 +97,51 @@ class PipelineTest(unittest.TestCase):
             self.assertIn("```python", translated)
             self.assertTrue(artifacts["bilingual"].exists())
 
+    def test_translate_can_retry_failed_chunks_only(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "sample.md"
+            source.write_text(SAMPLE, encoding="utf-8")
+            settings = Settings(database_path=root / "translate.db", workspace_path=root / "workspace")
+            service = TranslationService(settings)
+
+            project = service.create_project(source, "sample")
+            service.parse_project(project.id)
+            service.prepare_project(project.id)
+
+            chunks = service.store.list_chunks(project.id)
+            self.assertTrue(chunks)
+            failed = chunks[0]
+            failed.status = ChunkStatus.FAILED
+            failed.retry_count = settings.max_retry_count
+            failed.target_text = "stale translation"
+            failed.restored_text = "stale translation"
+            failed.error_message = "temporary provider failure"
+            service.store.upsert_chunk(failed)
+
+            service.translate_project(
+                project.id,
+                MockLLMProvider(),
+                enable_batching=False,
+                retry_failed=True,
+            )
+
+            retried = service.store.get_chunk(failed.id)
+            self.assertIsNotNone(retried)
+            self.assertEqual(retried.status, ChunkStatus.DONE)
+            self.assertEqual(retried.retry_count, 0)
+            self.assertIsNone(retried.error_message)
+            self.assertNotEqual(retried.restored_text, "stale translation")
+
+    def test_cli_translate_accepts_retry_failed_flag(self) -> None:
+        from llm_translate.cli import build_parser
+
+        args = build_parser().parse_args(["translate", "prj_example", "--retry-failed"])
+
+        self.assertEqual(args.command, "translate")
+        self.assertEqual(args.project_id, "prj_example")
+        self.assertTrue(args.retry_failed)
+
 
 if __name__ == "__main__":
     unittest.main()

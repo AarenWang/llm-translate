@@ -50,7 +50,7 @@ class EpubPipelineTest(unittest.TestCase):
             self._write_sample_epub(source)
             glossary = root / "glossary.csv"
             glossary.write_text(
-                "source_term,target_term\nAgent,Intelligent Agent\nTool Call,Tool Invocation\n",
+                "source_term,target_term\nAgent,Intelligent Agent\nTool Call,Tool Invocation\nStart,Begin\n",
                 encoding="utf-8",
             )
             settings = Settings(database_path=root / "translate.db", workspace_path=root / "workspace")
@@ -69,11 +69,15 @@ class EpubPipelineTest(unittest.TestCase):
             self.assertIn("epub", artifacts)
             self.assertTrue(artifacts["epub"].exists())
 
+            nav_blocks = [chunk for chunk in chunks if chunk.metadata.get("is_nav")]
+            self.assertTrue(nav_blocks)
+
             with zipfile.ZipFile(source, "r") as original, zipfile.ZipFile(artifacts["epub"], "r") as exported:
                 self.assertEqual(original.namelist(), exported.namelist())
                 self.assertEqual(exported.namelist()[0], "mimetype")
                 original_chapter = original.read("OEBPS/chapter1.xhtml").decode("utf-8")
                 exported_chapter = exported.read("OEBPS/chapter1.xhtml").decode("utf-8")
+                exported_nav = exported.read("OEBPS/nav.xhtml").decode("utf-8")
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
@@ -93,13 +97,19 @@ class EpubPipelineTest(unittest.TestCase):
             )
             self.assertIn("Intelligent Agent Guide", exported_soup.get_text())
             self.assertIn("Tool Invocation", exported_soup.get_text())
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+                exported_nav_soup = BeautifulSoup(exported_nav, "html5lib")
+            self.assertEqual(exported_nav_soup.find("a").get("href"), "chapter1.xhtml")
+            self.assertIn("Begin", exported_nav_soup.get_text())
+            self.assertNotIn("Start", exported_nav_soup.get_text())
 
             report = artifacts["validation_report_md"].read_text(encoding="utf-8")
             self.assertIn("EPUB_STRUCTURE", report)
             self.assertIn("EPUB_ARTIFACT", report)
             glossary = root / "glossary.csv"
             glossary.write_text(
-                "source_term,target_term\nAgent,Intelligent Agent\nTool Call,Tool Invocation\n",
+                "source_term,target_term\nAgent,Intelligent Agent\nTool Call,Tool Invocation\nStart,Begin\n",
                 encoding="utf-8",
             )
             settings = Settings(database_path=root / "translate.db", workspace_path=root / "workspace")
@@ -118,11 +128,15 @@ class EpubPipelineTest(unittest.TestCase):
             self.assertIn("epub", artifacts)
             self.assertTrue(artifacts["epub"].exists())
 
+            nav_blocks = [chunk for chunk in chunks if chunk.metadata.get("is_nav")]
+            self.assertTrue(nav_blocks)
+
             with zipfile.ZipFile(source, "r") as original, zipfile.ZipFile(artifacts["epub"], "r") as exported:
                 self.assertEqual(original.namelist(), exported.namelist())
                 self.assertEqual(exported.namelist()[0], "mimetype")
                 original_chapter = original.read("OEBPS/chapter1.xhtml").decode("utf-8")
                 exported_chapter = exported.read("OEBPS/chapter1.xhtml").decode("utf-8")
+                exported_nav = exported.read("OEBPS/nav.xhtml").decode("utf-8")
 
             with warnings.catch_warnings():
                 warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
@@ -142,6 +156,12 @@ class EpubPipelineTest(unittest.TestCase):
             )
             self.assertIn("Intelligent Agent Guide", exported_soup.get_text())
             self.assertIn("Tool Invocation", exported_soup.get_text())
+            with warnings.catch_warnings():
+                warnings.simplefilter("ignore", XMLParsedAsHTMLWarning)
+                exported_nav_soup = BeautifulSoup(exported_nav, "html5lib")
+            self.assertEqual(exported_nav_soup.find("a").get("href"), "chapter1.xhtml")
+            self.assertIn("Begin", exported_nav_soup.get_text())
+            self.assertNotIn("Start", exported_nav_soup.get_text())
 
             report = artifacts["validation_report_md"].read_text(encoding="utf-8")
             self.assertIn("EPUB_STRUCTURE", report)
@@ -266,7 +286,10 @@ class EpubPipelineTest(unittest.TestCase):
             for doc in result.documents:
                 self.assertIsNotNone(doc.item_id)
                 self.assertIsNotNone(doc.href)
-                self.assertGreaterEqual(doc.spine_index, 0)
+                if doc.is_nav:
+                    self.assertEqual(doc.spine_index, -1)
+                else:
+                    self.assertGreaterEqual(doc.spine_index, 0)
 
     def _write_epub_with_content(self, path: Path, content: str) -> None:
         """Create an EPUB file with specific content for testing."""

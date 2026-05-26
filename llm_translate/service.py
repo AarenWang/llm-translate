@@ -233,6 +233,7 @@ class TranslationService:
         enable_batching: bool = True,
         min_batch_chars: int = 500,
         max_batch_chars: int = 3000,
+        retry_failed: bool = False,
     ) -> None:
         print(f"[TRANSLATE_WORKFLOW] ========================================")
         print(f"[TRANSLATE_WORKFLOW] 开始翻译项目")
@@ -246,15 +247,24 @@ class TranslationService:
         print(f"[PROJECT_INFO] 输入格式: {project.input_format}")
 
         statuses = {ChunkStatus.PENDING, ChunkStatus.FAILED}
+        if retry_failed:
+            statuses = {ChunkStatus.FAILED}
+            print(f"[PROJECT_INFO] Retry mode: only FAILED chunks will be translated")
         if include_need_review:
             statuses.add(ChunkStatus.NEED_REVIEW)
             print(f"[PROJECT_INFO] 包含需要审查的块")
 
         chunks = self.store.list_chunks(project_id, statuses=statuses)
+        if retry_failed:
+            chunks = self._reset_chunks_for_retry(chunks)
         terms = self.store.list_glossary_terms(project_id)
 
         print(f"[GLOSSARY_INFO] 术语表条目数: {len(terms)}")
         print(f"[CHUNK_INFO] 待翻译块数: {len(chunks)}")
+
+        if not chunks:
+            print("[TRANSLATE_SUMMARY] No chunks matched the requested statuses")
+            return
 
         # Batch chunks if enabled
         if enable_batching and len(chunks) > 1 and not self._chunks_require_marker_splitting(chunks):
@@ -294,8 +304,8 @@ class TranslationService:
         print(f"[TRANSLATE_PROGRESS] 开始翻译各块...")
         print(f"[TRANSLATE_PROGRESS] ========================================")
 
+        total_chunks = len(chunks)
         for index, chunk in enumerate(chunks, 1):
-            total_chunks = len(chunks)
             progress_percent = (index - 1) / total_chunks * 100
 
             print(f"[CHUNK_{index:03d}] ========================================")
@@ -304,7 +314,7 @@ class TranslationService:
             print(f"[CHUNK_{index:03d}] 当前状态: {chunk.status.value}")
             print(f"[CHUNK_{index:03d}] 源文本长度: {len(chunk.source_text)} 字符")
 
-            if chunk.status == ChunkStatus.PENDING:
+            if chunk.status in {ChunkStatus.PENDING, ChunkStatus.FAILED, ChunkStatus.NEED_REVIEW}:
                 result = self._translate_chunk(project, chunk, provider, terms, index, total_chunks)
                 if result == "success":
                     success_count += 1
@@ -506,7 +516,7 @@ class TranslationService:
                 chunk_id, source_text = batch.chunks[0]
                 chunk = self.store.get_chunk(chunk_id)
 
-                if chunk.status != ChunkStatus.PENDING:
+                if chunk.status not in {ChunkStatus.PENDING, ChunkStatus.FAILED, ChunkStatus.NEED_REVIEW}:
                     print(f"[BATCH_{batch_index:03d}] 单chunk批次，状态为 {chunk.status.value}，跳过")
                     skipped_count += 1
                     continue
@@ -591,7 +601,9 @@ class TranslationService:
         chunk_ids = [chunk_id for chunk_id, _ in batch.chunks]
         chunks = [self.store.get_chunk(chunk_id) for chunk_id in chunk_ids]
 
-        pending_chunks = [c for c in chunks if c.status == ChunkStatus.PENDING]
+        pending_chunks = [
+            c for c in chunks if c.status in {ChunkStatus.PENDING, ChunkStatus.FAILED, ChunkStatus.NEED_REVIEW}
+        ]
         if not pending_chunks:
             print(f"{batch_prefix} 所有chunks已有翻译，跳过批次")
             return "skipped"
@@ -643,7 +655,7 @@ class TranslationService:
             # Update each chunk with its translation
             for chunk_id, translation in chunk_translations.items():
                 chunk = self.store.get_chunk(chunk_id)
-                if chunk.status == ChunkStatus.PENDING:
+                if chunk.status in {ChunkStatus.PENDING, ChunkStatus.FAILED, ChunkStatus.NEED_REVIEW}:
                     chunk.protected_text = chunk.source_text
                     chunk.target_text = translation
                     chunk.restored_text = translation
@@ -842,6 +854,20 @@ class TranslationService:
         print(f"{chunk_prefix} 错误信息: {chunk.error_message}")
 
         return "failed"
+
+    def _reset_chunks_for_retry(self, chunks: list[TranslationChunk]) -> list[TranslationChunk]:
+        reset_chunks: list[TranslationChunk] = []
+        for chunk in chunks:
+            chunk.protected_text = None
+            chunk.target_text = None
+            chunk.restored_text = None
+            chunk.status = ChunkStatus.PENDING
+            chunk.retry_count = 0
+            chunk.error_message = None
+            chunk.model_name = None
+            self.store.upsert_chunk(chunk)
+            reset_chunks.append(chunk)
+        return reset_chunks
 
     def source_path(self, project: TranslationProject) -> Path:
         return self.project_dir(project.id) / "source" / project.source_file_name

@@ -410,6 +410,19 @@ tr.project-row.active {
   gap: 8px;
 }
 
+.list-footer {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  margin-top: 10px;
+  padding: 10px;
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  color: var(--muted);
+  font-size: 12px;
+}
+
 .chunk-row {
   border: 1px solid var(--line);
   border-radius: 8px;

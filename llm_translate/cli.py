@@ -47,11 +47,16 @@ def build_parser() -> argparse.ArgumentParser:
 
     translate = sub.add_parser("translate")
     translate.add_argument("project_id")
-    translate.add_argument("--provider", choices=["mock", "litellm", "deepseek"], default=None)
+    translate.add_argument("--provider", choices=["mock", "litellm", "deepseek", "chatgpt"], default=None)
     translate.add_argument("--model", default=None)
     translate.add_argument("--api-base", default=None)
     translate.add_argument("--api-key", default=None)
     translate.add_argument("--include-need-review", action="store_true")
+    translate.add_argument(
+        "--retry-failed",
+        action="store_true",
+        help="Reset and translate only chunks currently marked FAILED.",
+    )
     translate.add_argument("--enable-batching", action="store_true", default=True, help="Enable chunk batching for efficiency (default: True)")
     translate.add_argument("--disable-batching", action="store_true", help="Disable chunk batching")
     translate.add_argument("--min-batch-chars", type=int, default=500, help="Minimum chars before considering batching (default: 500)")
@@ -65,7 +70,7 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--name", required=True)
     run.add_argument("--target-language", default=None)
     run.add_argument("--glossary", type=Path, default=None)
-    run.add_argument("--provider", choices=["mock", "litellm", "deepseek"], default=None)
+    run.add_argument("--provider", choices=["mock", "litellm", "deepseek", "chatgpt"], default=None)
     run.add_argument("--model", default=None)
     run.add_argument("--api-base", default=None)
     run.add_argument("--api-key", default=None)
@@ -156,6 +161,7 @@ def main(argv: list[str] | None = None) -> int:
             enable_batching=enable_batching,
             min_batch_chars=args.min_batch_chars,
             max_batch_chars=args.max_batch_chars,
+            retry_failed=args.retry_failed,
         )
         print("translated")
         return 0

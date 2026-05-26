@@ -101,6 +101,7 @@ class EpubFormatAdapter:
                         "href": block.metadata.get("href"),
                         "file_name": block.metadata.get("file_name"),
                         "spine_index": block.metadata.get("spine_index"),
+                        "is_nav": block.metadata.get("is_nav", False),
                         "text_node_index": block.metadata.get("text_node_index"),
                         "tag": block.metadata.get("tag"),
                     },
@@ -115,6 +116,8 @@ class EpubFormatAdapter:
         href = chunk.metadata.get("href") or chunk.chapter_id
         if href is None:
             return None
+        if chunk.metadata.get("is_nav"):
+            return f"EPUB navigation / {href}"
         return f"EPUB XHTML text node / {href}"
 
     def export(
