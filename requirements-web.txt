@@ -1,0 +1,13 @@
+# Web application dependencies for llm-translate
+# Install with: pip install -r requirements-web.txt
+
+-r requirements.txt
+
+# Web framework
+fastapi>=0.68.0
+
+# ASGI server
+uvicorn>=0.15.0
+
+# WebSocket support
+websockets>=11.0.0
