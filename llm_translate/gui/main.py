@@ -4,7 +4,7 @@ from pathlib import Path
 import sys
 
 from PySide6.QtCore import Qt, QUrl
-from PySide6.QtGui import QDesktopServices
+from PySide6.QtGui import QDesktopServices, QIcon
 from PySide6.QtWidgets import (
     QApplication,
     QCheckBox,
@@ -65,6 +65,7 @@ class MainWindow(QMainWindow):
         self.artifact_paths: dict[str, str] = {}
 
         self.setWindowTitle("LLM Translate")
+        self._apply_window_icon()
         self.resize(1180, 760)
         self.setMinimumSize(980, 640)
         self._build_ui()
@@ -591,6 +592,11 @@ class MainWindow(QMainWindow):
             """
         )
 
+    def _apply_window_icon(self) -> None:
+        icon_path = _asset_path("assets/app_icon.ico")
+        if icon_path.exists():
+            self.setWindowIcon(QIcon(str(icon_path)))
+
 
 def launch_gui() -> int:
     if "--bundle-data-smoke-test" in sys.argv:
@@ -609,14 +615,41 @@ def launch_gui() -> int:
         tiktoken.get_encoding("cl100k_base")
         return 0
 
+    if "--icon-smoke-test" in sys.argv:
+        return 0 if _asset_path("assets/app_icon.ico").exists() else 3
+
+    _set_windows_app_user_model_id()
     app = QApplication(sys.argv)
     app.setApplicationName("LLM Translate")
+    app.setApplicationDisplayName("LLM Translate")
+    app.setOrganizationName("LLM Translate")
+    icon_path = _asset_path("assets/app_icon.ico")
+    if icon_path.exists():
+        app.setWindowIcon(QIcon(str(icon_path)))
     window = MainWindow()
     if "--smoke-test" in sys.argv:
         window.close()
         return 0
     window.show()
     return app.exec()
+
+
+def _asset_path(relative_path: str) -> Path:
+    if hasattr(sys, "_MEIPASS"):
+        return Path(sys._MEIPASS) / relative_path
+    return Path(__file__).resolve().parents[2] / relative_path
+
+
+def _set_windows_app_user_model_id() -> None:
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+
+        app_id = "LLMTranslate.Desktop.TranslateClient"
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(app_id)
+    except Exception:
+        pass
 
 
 if __name__ == "__main__":

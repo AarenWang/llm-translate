@@ -2,7 +2,7 @@
 from PyInstaller.utils.hooks import collect_data_files
 from PyInstaller.utils.hooks import collect_submodules
 
-datas = [('.env.example', '.')]
+datas = [('.env.example', '.'), ('assets\\app_icon.ico', 'assets')]
 hiddenimports = ['sqlalchemy.sql.default_comparator', 'tiktoken_ext.openai_public', 'PySide6.QtSvg']
 datas += collect_data_files('litellm')
 hiddenimports += collect_submodules('llm_translate')
@@ -19,7 +19,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    excludes=['cv2', 'pygame', 'matplotlib', 'matplotlib.backends', 'pandas', 'pytest', 'py', 'IPython', 'jupyter', 'notebook', 'fastapi', 'uvicorn', 'starlette', 'llm_translate.web', 'tkinter', '_tkinter', 'torch', 'cupy', 'dask', 'botocore', 'boto3', 'sagemaker'],
     noarchive=False,
     optimize=0,
 )
@@ -41,6 +41,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon=['assets\\app_icon.ico'],
 )
 coll = COLLECT(
     exe,
